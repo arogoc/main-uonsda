@@ -50,8 +50,8 @@ export default function LocationManagement() {
       if (response.data.success) {
         setLocations(response.data.data);
       }
-    } catch (error) {
-      console.error('Error fetching locations:', error);
+    } catch (err) {
+      console.error('Error fetching locations:', err);
     } finally {
       setLoading(false);
     }
@@ -76,7 +76,7 @@ export default function LocationManagement() {
           }));
           setMessage({ type: 'success', text: 'Current location captured!' });
         },
-        (error) => {
+        () => {
           setMessage({ type: 'error', text: 'Unable to get current location' });
         }
       );
@@ -113,8 +113,8 @@ export default function LocationManagement() {
         });
         fetchLocations();
       }
-    } catch (error: any) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to create location' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to create location' });
     } finally {
       setIsCreating(false);
     }
@@ -130,8 +130,8 @@ export default function LocationManagement() {
         setMessage({ type: 'success', text: response.data.message });
         fetchLocations();
       }
-    } catch (error: any) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to activate location' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to activate location' });
     }
   };
 
@@ -144,8 +144,8 @@ export default function LocationManagement() {
         setMessage({ type: 'success', text: 'Location deleted successfully' });
         fetchLocations();
       }
-    } catch (error: any) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to delete location' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to delete location' });
     }
   };
 
