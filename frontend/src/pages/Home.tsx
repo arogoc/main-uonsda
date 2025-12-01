@@ -10,7 +10,7 @@ const ministryImages = {
   FOJ: '/src/assets/images/foj.jpg',
   ARK: '/src/assets/images/ark.jpg',
   VINEYARD: '/src/assets/images/vineyard.jpg',
-  PILGRIMS: '/src/assets/images/pilgrims.jpg'
+  PILGRIMS: '/src/assets/images/pilgrims.jpg' 
 };
 
 export default function Home() {
