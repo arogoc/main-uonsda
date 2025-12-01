@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "dotenv -e .env -- nodemon app.js",
-    "start": "node app.js",
+    "start": "prisma migrate deploy && node app.js",
     "build": "prisma generate",
     "postinstall": "prisma generate",
     "prisma:generate": "dotenv -e .env -- prisma generate",
