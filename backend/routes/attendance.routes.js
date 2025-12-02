@@ -1,8 +1,18 @@
 import express from 'express';
-import * as attendanceController from '../controllers/attendance.controller.js';
+import { PrismaClient } from '@prisma/client';
+import { createRedisClient } from '../config/redis.js';
+import { createAttendanceController } from '../controllers/attendance.controller.js';
 import { authenticate, authorize } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
+
+// ============================================
+// INITIALIZE DEPENDENCIES
+// ============================================
+
+const prisma = new PrismaClient();
+const redis = createRedisClient();
+const attendanceController = createAttendanceController(prisma, redis);
 
 // ============================================
 // PUBLIC ROUTES
@@ -27,7 +37,7 @@ router.get('/status', attendanceController.getServiceStatus);
  * @desc    Get member's attendance history
  * @access  Public
  */
-router.get('/member/:email', attendanceController.getMemberAttendance);
+router.get('/member/:email', attendanceController. getMemberAttendance);
 
 // ============================================
 // PROTECTED ROUTES (Admin only)
@@ -73,13 +83,30 @@ router.put('/locations/:id/activate', authenticate, attendanceController.setActi
  * @desc    Update church location
  * @access  Private (CLERK, ELDER)
  */
-router.put('/locations/:id', authenticate, attendanceController.updateLocation);
+router.put('/locations/:id', authenticate, attendanceController. updateLocation);
 
 /**
  * @route   DELETE /api/attendance/locations/:id
  * @desc    Delete church location
  * @access  Private (ELDER only)
  */
-router.delete('/locations/:id', authenticate, authorize('ELDER'), attendanceController.deleteLocation);
+router.delete('/locations/:id', authenticate, authorize('ELDER'), attendanceController. deleteLocation);
+
+// ============================================
+// GRACEFUL SHUTDOWN
+// ============================================
+
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM signal received: closing connections');
+  await prisma.$disconnect();
+  await redis.quit();
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT signal received: closing connections');
+  await prisma.$disconnect();
+  await redis.quit();
+  process.exit(0);
+});
 
 export default router;

@@ -1,323 +1,359 @@
 import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
+import Redis from 'ioredis';
 
-const prisma = new PrismaClient();
+// ============================================================================
+// CONFIGURATION & CONSTANTS
+// ============================================================================
 
-// Track devices to prevent fraud (in production, use Redis)
-const deviceAttendance = new Map();
+const CONFIG = {
+  CHURCH_TIMEZONE: 'Africa/Nairobi', // Configure based on church location
+  DEFAULT_RADIUS: 100, // meters
+  MAX_ATTENDANCE_HISTORY: 50,
+  DEVICE_FINGERPRINT_TTL: 86400, // 24 hours in seconds
+};
 
-/**
- * Calculate distance between two coordinates using Haversine formula
- * @param {number} lat1 - Latitude of point 1
- * @param {number} lon1 - Longitude of point 1
- * @param {number} lat2 - Latitude of point 2
- * @param {number} lon2 - Longitude of point 2
- * @returns {number} Distance in meters
- */
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+const SERVICE_SCHEDULES = {
+  SABBATH_MORNING: {
+    day: 6, // Saturday
+    startHour: 8,
+    endHour: 17,
+    name: 'Sabbath Morning',
+    displayTime: 'Saturday 8:00 AM - 5:00 PM',
+  },
+  WEDNESDAY_VESPERS: {
+    day: 3, // Wednesday
+    startHour: 17,
+    endHour: 20,
+    name: 'Wednesday Vespers',
+    displayTime: 'Wednesday 5:00 PM - 8:00 PM',
+  },
+  FRIDAY_VESPERS: {
+    day: 5, // Friday
+    startHour: 17,
+    endHour: 20,
+    name: 'Friday Vespers',
+    displayTime: 'Friday 5:00 PM - 8:00 PM',
+  },
+};
 
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+// ============================================================================
+// VALIDATION SCHEMAS
+// ============================================================================
 
-  return R * c; // Distance in meters
+const markAttendanceSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  deviceId: z.string().min(10, 'Invalid device ID'),
+});
+
+const createLocationSchema = z. object({
+  name: z. string().min(1). max(100),
+  description: z.string().optional(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radius: z.number().int().min(10).max(1000). default(CONFIG.DEFAULT_RADIUS),
+  address: z.string().optional(),
+});
+
+const setActiveLocationSchema = z.object({
+  services: z
+    .array(z.enum(['SABBATH_MORNING', 'WEDNESDAY_VESPERS', 'FRIDAY_VESPERS']))
+    .min(1),
+});
+
+const attendanceQuerySchema = z.object({
+  startDate: z.string().datetime(). optional(),
+  endDate: z.string().datetime().optional(),
+  serviceType: z
+    .enum(['SABBATH_MORNING', 'WEDNESDAY_VESPERS', 'FRIDAY_VESPERS'])
+    . optional(),
+  memberId: z.string().optional(),
+});
+
+// ============================================================================
+// CUSTOM ERRORS
+// ============================================================================
+
+class AttendanceError extends Error {
+  constructor(message, statusCode = 400, metadata = {}) {
+    super(message);
+    this.name = 'AttendanceError';
+    this.statusCode = statusCode;
+    this.metadata = metadata;
+  }
 }
 
-/**
- * Determine current service type based on day and time
- * @returns {Object} { serviceType, isServiceTime }
- */
-function getCurrentServiceInfo() {
-  const now = new Date();
-  const day = now.getDay(); // 0 = Sunday, 6 = Saturday
-  const hour = now.getHours();
+class NotServiceTimeError extends AttendanceError {
+  constructor() {
+    const serviceSchedule = Object.entries(SERVICE_SCHEDULES).reduce(
+      (acc, [key, val]) => {
+        acc[key] = val.displayTime;
+        return acc;
+      },
+      {}
+    );
 
-  // Saturday (Sabbath) 8 AM - 5 PM
-  if (day === 6 && hour >= 8 && hour < 17) {
-    return { serviceType: 'SABBATH_MORNING', isServiceTime: true };
+    super('Attendance can only be marked during service times', 403, {
+      serviceSchedule,
+    });
   }
-
-  // Wednesday Vespers 5 PM - 8 PM
-  if (day === 3 && hour >= 17 && hour < 20) {
-    return { serviceType: 'WEDNESDAY_VESPERS', isServiceTime: true };
-  }
-
-  // Friday Vespers 5 PM - 8 PM
-  if (day === 5 && hour >= 17 && hour < 20) {
-    return { serviceType: 'FRIDAY_VESPERS', isServiceTime: true };
-  }
-
-  return { serviceType: null, isServiceTime: false };
 }
 
-/**
- * Get active location for a specific service type
- * @param {string} serviceType - Service type
- * @returns {Promise<Object|null>} Church location
- */
-async function getActiveLocationForService(serviceType) {
-  const whereClause = {};
-  
-  switch (serviceType) {
-    case 'SABBATH_MORNING':
-      whereClause.isActiveSabbath = true;
-      break;
-    case 'WEDNESDAY_VESPERS':
-      whereClause.isActiveWednesday = true;
-      break;
-    case 'FRIDAY_VESPERS':
-      whereClause.isActiveFriday = true;
-      break;
+class LocationOutOfBoundsError extends AttendanceError {
+  constructor(distance, maxDistance, locationName) {
+    super(
+      `You must be within ${maxDistance}m of ${locationName} to mark attendance. `,
+      403,
+      {
+        yourDistance: `${Math.round(distance)}m away`,
+        requiredDistance: `${maxDistance}m`,
+        hint: 'Please make sure you are physically present at the church location.',
+      }
+    );
   }
-
-  return await prisma.churchLocation.findFirst({
-    where: whereClause
-  });
 }
 
-/**
- * Mark attendance for a member (Simple one-click with fraud prevention)
- * @route POST /api/attendance/mark
- * @access Public
- */
-export const markAttendance = async (req, res) => {
-  try {
-    const { email, latitude, longitude, deviceId } = req.body;
+class DuplicateDeviceError extends AttendanceError {
+  constructor() {
+    super(
+      'This device has already been used to mark attendance for a different member today.',
+      429,
+      {
+        hint: 'Each person must use their own device to mark attendance.  If you need help, please contact church administration.',
+      }
+    );
+  }
+}
 
-    // Validate required fields
-    if (!email || !latitude || !longitude || !deviceId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email, location, and device information are required'
-      });
-    }
+// ============================================================================
+// ATTENDANCE SERVICE CLASS
+// ============================================================================
 
-    // Check if it's service time
-    const { serviceType, isServiceTime } = getCurrentServiceInfo();
-    if (!isServiceTime) {
-      return res.status(403).json({
-        success: false,
-        message: 'Attendance can only be marked during service times',
-        serviceSchedule: {
-          sabbath: 'Saturday 8:00 AM - 5:00 PM',
-          wednesdayVespers: 'Wednesday 5:00 PM - 8:00 PM',
-          fridayVespers: 'Friday 5:00 PM - 8:00 PM'
-        }
-      });
-    }
+class AttendanceService {
+  constructor(prisma, redis, config = CONFIG) {
+    this.prisma = prisma;
+    this.redis = redis;
+    this.config = config;
+  }
 
-    // Device fraud prevention: Check if this device already marked attendance for someone else today
-    const today = new Date().toISOString().split('T')[0];
-    const deviceKey = `${deviceId}-${today}-${serviceType}`;
-    
-    if (deviceAttendance.has(deviceKey)) {
-      const existingEmail = deviceAttendance.get(deviceKey);
-      if (existingEmail !== email) {
-        return res.status(429).json({
-          success: false,
-          message: 'This device has already been used to mark attendance for a different member today.',
-          hint: 'Each person must use their own device to mark attendance. If you need help, please contact church administration.'
-        });
+  // ============================================================================
+  // UTILITY METHODS
+  // ============================================================================
+
+  /**
+   * Calculate distance between two coordinates using Haversine formula
+   * @param {number} lat1 - Latitude of point 1
+   * @param {number} lon1 - Longitude of point 1
+   * @param {number} lat2 - Latitude of point 2
+   * @param {number} lon2 - Longitude of point 2
+   * @returns {number} Distance in meters
+   */
+  calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math. cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math. sqrt(1 - a));
+
+    return R * c;
+  }
+
+  /**
+   * Get current date/time in church's timezone
+   * @returns {Date} Current date in church timezone
+   */
+  getChurchTime() {
+    return new Date(
+      new Date(). toLocaleString('en-US', {
+        timeZone: this.config.CHURCH_TIMEZONE,
+      })
+    );
+  }
+
+  /**
+   * Get day boundaries for today in church timezone
+   * @returns {{ start: Date, end: Date }}
+   */
+  getTodayBoundaries() {
+    const now = this.getChurchTime();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  }
+
+  /**
+   * Determine current service type based on day and time
+   * @returns {{ serviceType: string|null, isServiceTime: boolean }}
+   */
+  getCurrentServiceInfo() {
+    const now = this.getChurchTime();
+    const day = now.getDay();
+    const hour = now.getHours();
+
+    for (const [type, schedule] of Object.entries(SERVICE_SCHEDULES)) {
+      if (
+        day === schedule.day &&
+        hour >= schedule.startHour &&
+        hour < schedule.endHour
+      ) {
+        return { serviceType: type, isServiceTime: true };
       }
     }
 
-    // Find member by email
-    const member = await prisma.member.findUnique({
-      where: { email }
-    });
+    return { serviceType: null, isServiceTime: false };
+  }
 
-    if (!member) {
-      return res.status(404).json({
-        success: false,
-        message: 'Member not found with this email. Please check your email address or register first.'
-      });
+  /**
+   * Get active location for a specific service type
+   * @param {string} serviceType - Service type
+   * @returns {Promise<Object|null>} Church location
+   */
+  async getActiveLocationForService(serviceType) {
+    const whereClause = {};
+
+    switch (serviceType) {
+      case 'SABBATH_MORNING':
+        whereClause.isActiveSabbath = true;
+        break;
+      case 'WEDNESDAY_VESPERS':
+        whereClause.isActiveWednesday = true;
+        break;
+      case 'FRIDAY_VESPERS':
+        whereClause.isActiveFriday = true;
+        break;
     }
 
-    // Get active church location for this service
-    const churchLocation = await getActiveLocationForService(serviceType);
+    return await this.prisma.churchLocation.findFirst({ where: whereClause });
+  }
+
+  /**
+   * Check and set device fingerprint in Redis
+   * @param {string} deviceId - Device identifier
+   * @param {string} email - Member email
+   * @param {string} serviceType - Service type
+   * @throws {DuplicateDeviceError} If device already used by different member
+   */
+  async checkDeviceFingerprint(deviceId, email, serviceType) {
+    const today = new Date().toISOString().split('T')[0];
+    const deviceKey = `attendance:device:${deviceId}:${today}:${serviceType}`;
+
+    const existingEmail = await this.redis.get(deviceKey);
+
+    if (existingEmail && existingEmail !== email) {
+      throw new DuplicateDeviceError();
+    }
+
+    // Set with TTL
+    await this.redis.setex(
+      deviceKey,
+      this.config.DEVICE_FINGERPRINT_TTL,
+      email
+    );
+  }
+
+  // ============================================================================
+  // BUSINESS LOGIC METHODS
+  // ============================================================================
+
+  /**
+   * Mark attendance for a member
+   * @param {Object} data - Attendance data
+   * @param {string} data.email - Member email
+   * @param {number} data.latitude - Current latitude
+   * @param {number} data.longitude - Current longitude
+   * @param {string} data.deviceId - Device identifier
+   * @returns {Promise<Object>} Attendance record
+   */
+  async markAttendance(data) {
+    const { email, latitude, longitude, deviceId } = data;
+
+    // Check service time
+    const { serviceType, isServiceTime } = this.getCurrentServiceInfo();
+    if (!isServiceTime || ! serviceType) {
+      throw new NotServiceTimeError();
+    }
+
+    // Check device fingerprint
+    await this.checkDeviceFingerprint(deviceId, email, serviceType);
+
+    // Find member and location in parallel
+    const [member, churchLocation] = await Promise.all([
+      this.prisma.member.findUnique({ where: { email } }),
+      this.getActiveLocationForService(serviceType),
+    ]);
+
+    if (! member) {
+      throw new AttendanceError(
+        'Member not found with this email.  Please check your email address or register first.',
+        404
+      );
+    }
 
     if (!churchLocation) {
-      return res.status(500).json({
-        success: false,
-        message: `No location has been set for this service. Please contact church administration.`
-      });
+      throw new AttendanceError(
+        'No location has been set for this service. Please contact church administration.',
+        500
+      );
     }
 
-    // Calculate distance from church
-    const distance = calculateDistance(
+    // Verify location proximity
+    const distance = this.calculateDistance(
       latitude,
       longitude,
       churchLocation.latitude,
       churchLocation.longitude
     );
 
-    // Check if within acceptable radius
     if (distance > churchLocation.radius) {
-      return res.status(403).json({
-        success: false,
-        message: `You must be within ${churchLocation.radius}m of ${churchLocation.name} to mark attendance.`,
-        yourDistance: `${Math.round(distance)}m away`,
-        hint: 'Please make sure you are physically present at the church location.'
-      });
+      throw new LocationOutOfBoundsError(
+        distance,
+        churchLocation.radius,
+        churchLocation.name
+      );
     }
 
-    // Check if already marked attendance today for this service
-    const today_start = new Date();
-    today_start.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today_start);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const existingAttendance = await prisma.attendance.findFirst({
+    // Check for duplicate attendance
+    const { start, end } = this.getTodayBoundaries();
+    const existingAttendance = await this.prisma.attendance.findFirst({
       where: {
         memberId: member.id,
         serviceType,
-        attendedAt: {
-          gte: today_start,
-          lt: tomorrow
-        }
-      }
+        attendedAt: { gte: start, lt: end },
+      },
     });
 
     if (existingAttendance) {
-      return res.status(400).json({
-        success: false,
-        message: 'You have already marked attendance for this service today! 🎉',
-        attendance: {
-          attendedAt: existingAttendance.attendedAt,
-          location: existingAttendance.locationName
+      throw new AttendanceError(
+        'You have already marked attendance for this service today!  🎉',
+        400,
+        {
+          attendance: {
+            attendedAt: existingAttendance.attendedAt,
+            location: existingAttendance.locationName,
+          },
         }
-      });
+      );
     }
 
     // Create attendance record
-    const attendance = await prisma.attendance.create({
+    const attendance = await this.prisma.attendance.create({
       data: {
         memberId: member.id,
         serviceType,
         latitude,
         longitude,
         locationName: churchLocation.name,
-        isVerified: true
+        isVerified: true,
       },
-      include: {
-        member: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
-    });
-
-    // Store device fingerprint to prevent reuse
-    deviceAttendance.set(deviceKey, email);
-
-    res.status(201).json({
-      success: true,
-      message: `Attendance marked successfully at ${churchLocation.name}! 🙏`,
-      data: attendance
-    });
-  } catch (error) {
-    console.error('Error marking attendance:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to mark attendance',
-      error: error.message
-    });
-  }
-};
-
-/**
- * Get service status and schedule
- * @route GET /api/attendance/status
- * @access Public
- */
-export const getServiceStatus = async (req, res) => {
-  try {
-    const { serviceType, isServiceTime } = getCurrentServiceInfo();
-
-    let churchLocation = null;
-    if (serviceType) {
-      churchLocation = await getActiveLocationForService(serviceType);
-    }
-
-    res.json({
-      success: true,
-      data: {
-        isServiceTime,
-        currentService: serviceType,
-        churchLocation: churchLocation ? {
-          name: churchLocation.name,
-          description: churchLocation.description,
-          latitude: churchLocation.latitude,
-          longitude: churchLocation.longitude,
-          radius: churchLocation.radius,
-          address: churchLocation.address
-        } : null,
-        schedule: {
-          sabbath: {
-            day: 'Saturday',
-            time: '8:00 AM - 5:00 PM',
-            type: 'SABBATH_MORNING'
-          },
-          wednesdayVespers: {
-            day: 'Wednesday',
-            time: '5:00 PM - 8:00 PM',
-            type: 'WEDNESDAY_VESPERS'
-          },
-          fridayVespers: {
-            day: 'Friday',
-            time: '5:00 PM - 8:00 PM',
-            type: 'FRIDAY_VESPERS'
-          }
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error getting service status:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get service status',
-      error: error.message
-    });
-  }
-};
-
-/**
- * Get attendance records with filters
- * @route GET /api/attendance
- * @access Private (Admin only)
- */
-export const getAttendance = async (req, res) => {
-  try {
-    const { startDate, endDate, serviceType, memberId } = req.query;
-
-    // Build filter object
-    const where = {};
-
-    if (startDate || endDate) {
-      where.attendedAt = {};
-      if (startDate) where.attendedAt.gte = new Date(startDate);
-      if (endDate) where.attendedAt.lte = new Date(endDate);
-    }
-
-    if (serviceType) {
-      where.serviceType = serviceType;
-    }
-
-    if (memberId) {
-      where.memberId = memberId;
-    }
-
-    const attendances = await prisma.attendance.findMany({
-      where,
       include: {
         member: {
           select: {
@@ -325,364 +361,550 @@ export const getAttendance = async (req, res) => {
             firstName: true,
             lastName: true,
             email: true,
-            ministry: true
-          }
-        }
+          },
+        },
       },
-      orderBy: { attendedAt: 'desc' }
     });
 
-    // Get statistics
-    const total = attendances.length;
-    const byService = await prisma.attendance.groupBy({
-      by: ['serviceType'],
-      where,
-      _count: true
-    });
-
-    res.json({
-      success: true,
-      data: {
-        attendances,
-        total,
-        byService
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching attendance:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch attendance',
-      error: error.message
-    });
+    return {
+      message: `Attendance marked successfully at ${churchLocation.name}!  🙏`,
+      data: attendance,
+    };
   }
-};
 
-/**
- * Get member attendance history
- * @route GET /api/attendance/member/:email
- * @access Public
- */
-export const getMemberAttendance = async (req, res) => {
-  try {
-    const { email } = req.params;
+  /**
+   * Get service status and schedule
+   * @returns {Promise<Object>} Service status information
+   */
+  async getServiceStatus() {
+    const { serviceType, isServiceTime } = this.getCurrentServiceInfo();
 
-    const member = await prisma.member.findUnique({
+    let churchLocation = null;
+    if (serviceType) {
+      churchLocation = await this.getActiveLocationForService(serviceType);
+    }
+
+    const schedule = Object.entries(SERVICE_SCHEDULES).reduce(
+      (acc, [key, val]) => {
+        const days = [
+          'Sunday',
+          'Monday',
+          'Tuesday',
+          'Wednesday',
+          'Thursday',
+          'Friday',
+          'Saturday',
+        ];
+        acc[key] = {
+          day: days[val.day],
+          time: val.displayTime,
+          type: key,
+        };
+        return acc;
+      },
+      {}
+    );
+
+    return {
+      isServiceTime,
+      currentService: serviceType,
+      churchLocation: churchLocation
+        ? {
+            name: churchLocation.name,
+            description: churchLocation.description,
+            latitude: churchLocation.latitude,
+            longitude: churchLocation.longitude,
+            radius: churchLocation.radius,
+            address: churchLocation.address,
+          }
+        : null,
+      schedule,
+    };
+  }
+
+  /**
+   * Get attendance records with filters
+   * @param {Object} filters - Query filters
+   * @returns {Promise<Object>} Attendance records and statistics
+   */
+  async getAttendance(filters) {
+    const where = {};
+
+    if (filters. startDate || filters.endDate) {
+      where.attendedAt = {};
+      if (filters.startDate) where.attendedAt.gte = new Date(filters.startDate);
+      if (filters.endDate) where.attendedAt.lte = new Date(filters.endDate);
+    }
+
+    if (filters.serviceType) {
+      where.serviceType = filters. serviceType;
+    }
+
+    if (filters.memberId) {
+      where.memberId = filters.memberId;
+    }
+
+    const [attendances, byService] = await Promise.all([
+      this.prisma.attendance. findMany({
+        where,
+        include: {
+          member: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              ministry: true,
+            },
+          },
+        },
+        orderBy: { attendedAt: 'desc' },
+      }),
+      this.prisma. attendance.groupBy({
+        by: ['serviceType'],
+        where,
+        _count: true,
+      }),
+    ]);
+
+    return {
+      attendances,
+      total: attendances.length,
+      byService,
+    };
+  }
+
+  /**
+   * Get member attendance history
+   * @param {string} email - Member email
+   * @returns {Promise<Object>} Member attendance data
+   */
+  async getMemberAttendance(email) {
+    const member = await this.prisma.member.findUnique({
       where: { email },
       include: {
         attendances: {
           orderBy: { attendedAt: 'desc' },
-          take: 50 // Last 50 attendance records
-        }
-      }
+          take: this.config.MAX_ATTENDANCE_HISTORY,
+        },
+      },
     });
 
-    if (!member) {
-      return res.status(404).json({
-        success: false,
-        message: 'Member not found'
-      });
+    if (! member) {
+      throw new AttendanceError('Member not found', 404);
     }
 
-    // Calculate statistics
     const totalAttendances = member.attendances.length;
     const byService = member.attendances.reduce((acc, att) => {
       acc[att.serviceType] = (acc[att.serviceType] || 0) + 1;
       return acc;
     }, {});
 
-    res.json({
-      success: true,
-      data: {
-        member: {
-          id: member.id,
-          firstName: member.firstName,
-          lastName: member.lastName,
-          email: member.email
-        },
-        totalAttendances,
-        byService,
-        recentAttendances: member.attendances
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching member attendance:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch member attendance',
-      error: error.message
-    });
+    return {
+      member: {
+        id: member. id,
+        firstName: member. firstName,
+        lastName: member. lastName,
+        email: member. email,
+      },
+      totalAttendances,
+      byService,
+      recentAttendances: member.attendances,
+    };
   }
-};
 
-/**
- * Get all saved church locations
- * @route GET /api/attendance/locations
- * @access Private (Admin)
- */
-export const getAllLocations = async (req, res) => {
-  try {
-    const locations = await prisma.churchLocation.findMany({
+  /**
+   * Get all saved church locations
+   * @returns {Promise<Array>} List of church locations
+   */
+  async getAllLocations() {
+    return await this.prisma.churchLocation.findMany({
       where: { isSaved: true },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    res.json({
-      success: true,
-      data: locations
-    });
-  } catch (error) {
-    console.error('Error fetching locations:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch locations',
-      error: error.message
+      orderBy: { createdAt: 'desc' },
     });
   }
-};
 
-/**
- * Create a new church location
- * @route POST /api/attendance/locations
- * @access Private (CLERK, ELDER)
- */
-export const createLocation = async (req, res) => {
-  try {
-    const { name, description, latitude, longitude, radius, address } = req.body;
-
-    if (!name || !latitude || !longitude) {
-      return res.status(400).json({
-        success: false,
-        message: 'Name, latitude, and longitude are required'
-      });
-    }
-
-    // Check if location name already exists
-    const existing = await prisma.churchLocation.findUnique({
-      where: { name }
+  /**
+   * Create a new church location
+   * @param {Object} data - Location data
+   * @param {string} createdBy - Admin ID creating the location
+   * @returns {Promise<Object>} Created location
+   */
+  async createLocation(data, createdBy) {
+    // Check for duplicate name
+    const existing = await this.prisma.churchLocation.findUnique({
+      where: { name: data.name },
     });
 
     if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: 'A location with this name already exists'
-      });
+      throw new AttendanceError(
+        'A location with this name already exists',
+        400
+      );
     }
 
-    const location = await prisma.churchLocation.create({
+    return await this.prisma.churchLocation.create({
       data: {
-        name,
-        description,
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
-        radius: radius ? parseInt(radius) : 100,
-        address,
+        ... data,
         isActiveSabbath: false,
         isActiveWednesday: false,
         isActiveFriday: false,
         isSaved: true,
-        createdBy: req.admin.id
-      }
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Church location created successfully',
-      data: location
-    });
-  } catch (error) {
-    console.error('Error creating location:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create location',
-      error: error.message
+        createdBy,
+      },
     });
   }
-};
 
-/**
- * Set active location for specific service(s)
- * @route PUT /api/attendance/locations/:id/activate
- * @access Private (CLERK, ELDER)
- */
-export const setActiveLocation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { services } = req.body; // Array: ['SABBATH_MORNING', 'WEDNESDAY_VESPERS', 'FRIDAY_VESPERS']
-
-    if (!services || !Array.isArray(services) || services.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please specify which services to activate this location for'
-      });
-    }
-
-    // Check if location exists
-    const location = await prisma.churchLocation.findUnique({
-      where: { id }
+  /**
+   * Set active location for specific service(s)
+   * @param {string} locationId - Location ID
+   * @param {Array<string>} services - Array of service types
+   * @returns {Promise<Object>} Updated location
+   */
+  async setActiveLocation(locationId, services) {
+    const location = await this.prisma.churchLocation.findUnique({
+      where: { id: locationId },
     });
 
     if (!location) {
-      return res.status(404).json({
-        success: false,
-        message: 'Location not found'
-      });
+      throw new AttendanceError('Location not found', 404);
     }
 
-    // Deactivate all locations for the specified services and activate the selected one
-    const updateData = {};
-    
-    if (services.includes('SABBATH_MORNING')) {
-      await prisma.churchLocation.updateMany({
-        data: { isActiveSabbath: false }
-      });
-      updateData.isActiveSabbath = true;
-    }
-    
-    if (services.includes('WEDNESDAY_VESPERS')) {
-      await prisma.churchLocation.updateMany({
-        data: { isActiveWednesday: false }
-      });
-      updateData.isActiveWednesday = true;
-    }
-    
-    if (services.includes('FRIDAY_VESPERS')) {
-      await prisma.churchLocation.updateMany({
-        data: { isActiveFriday: false }
-      });
-      updateData.isActiveFriday = true;
-    }
+    // Use transaction to ensure atomicity
+    return await this.prisma.$transaction(async (tx) => {
+      const updateData = {};
 
-    // Activate the selected location for the specified services
-    const activeLocation = await prisma.churchLocation.update({
-      where: { id },
-      data: updateData
-    });
-
-    res.json({
-      success: true,
-      message: `${activeLocation.name} is now active for selected services`,
-      data: activeLocation
-    });
-  } catch (error) {
-    console.error('Error setting active location:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to set active location',
-      error: error.message
-    });
-  }
-};
-
-/**
- * Update a church location
- * @route PUT /api/attendance/locations/:id
- * @access Private (CLERK, ELDER)
- */
-export const updateLocation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, description, latitude, longitude, radius, address } = req.body;
-
-    const location = await prisma.churchLocation.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
-        ...(latitude && { latitude: parseFloat(latitude) }),
-        ...(longitude && { longitude: parseFloat(longitude) }),
-        ...(radius && { radius: parseInt(radius) }),
-        ...(address !== undefined && { address })
+      for (const service of services) {
+        switch (service) {
+          case 'SABBATH_MORNING':
+            await tx.churchLocation.updateMany({
+              data: { isActiveSabbath: false },
+            });
+            updateData.isActiveSabbath = true;
+            break;
+          case 'WEDNESDAY_VESPERS':
+            await tx.churchLocation.updateMany({
+              data: { isActiveWednesday: false },
+            });
+            updateData.isActiveWednesday = true;
+            break;
+          case 'FRIDAY_VESPERS':
+            await tx.churchLocation.updateMany({
+              data: { isActiveFriday: false },
+            });
+            updateData.isActiveFriday = true;
+            break;
+        }
       }
-    });
 
-    res.json({
-      success: true,
-      message: 'Location updated successfully',
-      data: location
-    });
-  } catch (error) {
-    console.error('Error updating location:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update location',
-      error: error.message
+      return await tx.churchLocation.update({
+        where: { id: locationId },
+        data: updateData,
+      });
     });
   }
-};
 
-/**
- * Delete a church location
- * @route DELETE /api/attendance/locations/:id
- * @access Private (ELDER only)
- */
-export const deleteLocation = async (req, res) => {
-  try {
-    const { id } = req.params;
+  /**
+   * Update a church location
+   * @param {string} locationId - Location ID
+   * @param {Object} data - Updated location data
+   * @returns {Promise<Object>} Updated location
+   */
+  async updateLocation(locationId, data) {
+    return await this.prisma.churchLocation.update({
+      where: { id: locationId },
+      data,
+    });
+  }
 
-    // Check if it's an active location for any service
-    const location = await prisma.churchLocation.findUnique({
-      where: { id }
+  /**
+   * Delete a church location
+   * @param {string} locationId - Location ID
+   */
+  async deleteLocation(locationId) {
+    const location = await this.prisma.churchLocation. findUnique({
+      where: { id: locationId },
     });
 
-    if (location?.isActiveSabbath || location?.isActiveWednesday || location?.isActiveFriday) {
+    if (
+      location?. isActiveSabbath ||
+      location?.isActiveWednesday ||
+      location?.isActiveFriday
+    ) {
+      throw new AttendanceError(
+        'Cannot delete a location that is active for any service.  Please deactivate it first.',
+        400
+      );
+    }
+
+    await this.prisma.churchLocation. delete({
+      where: { id: locationId },
+    });
+  }
+
+  /**
+   * Get currently active locations for all services
+   * @returns {Promise<Object>} Active locations for each service
+   */
+  async getActiveLocations() {
+    const [sabbath, wednesday, friday] = await Promise.all([
+      this.prisma.churchLocation.findFirst({
+        where: { isActiveSabbath: true },
+      }),
+      this.prisma. churchLocation.findFirst({
+        where: { isActiveWednesday: true },
+      }),
+      this.prisma.churchLocation. findFirst({
+        where: { isActiveFriday: true },
+      }),
+    ]);
+
+    return { sabbath, wednesday, friday };
+  }
+}
+
+// ============================================================================
+// ATTENDANCE CONTROLLER CLASS
+// ============================================================================
+
+class AttendanceController {
+  constructor(service) {
+    this.service = service;
+  }
+
+  /**
+   * Handle errors and send appropriate response
+   * @param {Error} error - The error object
+   * @param {Object} res - Express response object
+   */
+  handleError(error, res) {
+    console.error('Attendance Error:', error);
+
+    if (error instanceof AttendanceError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+        ... error.metadata,
+      });
+    }
+
+    if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot delete a location that is active for any service. Please deactivate it first.'
+        message: 'Validation error',
+        errors: error.errors,
       });
     }
 
-    await prisma.churchLocation.delete({
-      where: { id }
-    });
-
-    res.json({
-      success: true,
-      message: 'Location deleted successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting location:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: 'Failed to delete location',
-      error: error.message
+      message: 'Internal server error',
+      error: error.message || 'Unknown error',
     });
   }
-};
+
+  /**
+   * Mark attendance for a member
+   * @route POST /api/attendance/mark
+   * @access Public
+   */
+  markAttendance = async (req, res) => {
+    try {
+      const data = markAttendanceSchema.parse(req.body);
+      const result = await this.service.markAttendance(data);
+      res.status(201).json({ success: true, ... result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get service status and schedule
+   * @route GET /api/attendance/status
+   * @access Public
+   */
+  getServiceStatus = async (req, res) => {
+    try {
+      const result = await this. service.getServiceStatus();
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get attendance records with filters
+   * @route GET /api/attendance
+   * @access Private (Admin only)
+   */
+  getAttendance = async (req, res) => {
+    try {
+      const filters = attendanceQuerySchema.parse(req.query);
+      const result = await this. service.getAttendance(filters);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get member attendance history
+   * @route GET /api/attendance/member/:email
+   * @access Public
+   */
+  getMemberAttendance = async (req, res) => {
+    try {
+      const { email } = req.params;
+      const result = await this.service.getMemberAttendance(email);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get all saved church locations
+   * @route GET /api/attendance/locations
+   * @access Private (Admin)
+   */
+  getAllLocations = async (req, res) => {
+    try {
+      const result = await this.service.getAllLocations();
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Create a new church location
+   * @route POST /api/attendance/locations
+   * @access Private (CLERK, ELDER)
+   */
+  createLocation = async (req, res) => {
+    try {
+      const data = createLocationSchema.parse(req.body);
+      const result = await this.service.createLocation(data, req.admin.id);
+      res.status(201).json({
+        success: true,
+        message: 'Church location created successfully',
+        data: result,
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Set active location for specific service(s)
+   * @route PUT /api/attendance/locations/:id/activate
+   * @access Private (CLERK, ELDER)
+   */
+  setActiveLocation = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { services } = setActiveLocationSchema.parse(req. body);
+      const result = await this.service.setActiveLocation(id, services);
+      res.json({
+        success: true,
+        message: `${result.name} is now active for selected services`,
+        data: result,
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Update a church location
+   * @route PUT /api/attendance/locations/:id
+   * @access Private (CLERK, ELDER)
+   */
+  updateLocation = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const data = createLocationSchema.partial().parse(req.body);
+      const result = await this.service.updateLocation(id, data);
+      res.json({
+        success: true,
+        message: 'Location updated successfully',
+        data: result,
+      });
+    } catch (error) {
+      this. handleError(error, res);
+    }
+  };
+
+  /**
+   * Delete a church location
+   * @route DELETE /api/attendance/locations/:id
+   * @access Private (ELDER only)
+   */
+  deleteLocation = async (req, res) => {
+    try {
+      const { id } = req.params;
+      await this.service.deleteLocation(id);
+      res.json({
+        success: true,
+        message: 'Location deleted successfully',
+      });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get currently active locations for all services
+   * @route GET /api/attendance/locations/active
+   * @access Private (Admin)
+   */
+  getActiveLocations = async (req, res) => {
+    try {
+      const result = await this.service. getActiveLocations();
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+}
+
+// ============================================================================
+// FACTORY FUNCTION (Dependency Injection Setup)
+// ============================================================================
 
 /**
- * Get currently active locations for all services
- * @route GET /api/attendance/locations/active
- * @access Private (Admin)
+ * Create an attendance controller with all dependencies
+ * @param {PrismaClient} prisma - Prisma client instance
+ * @param {Redis} redis - Redis client instance
+ * @returns {AttendanceController} Controller instance
  */
-export const getActiveLocations = async (req, res) => {
-  try {
-    const sabbathLocation = await prisma.churchLocation.findFirst({
-      where: { isActiveSabbath: true }
-    });
+export function createAttendanceController(prisma, redis) {
+  const service = new AttendanceService(prisma, redis);
+  return new AttendanceController(service);
+}
 
-    const wednesdayLocation = await prisma.churchLocation.findFirst({
-      where: { isActiveWednesday: true }
-    });
+// ============================================================================
+// DEFAULT EXPORT (for backward compatibility)
+// ============================================================================
 
-    const fridayLocation = await prisma.churchLocation.findFirst({
-      where: { isActiveFriday: true }
-    });
+// If you want to use it without dependency injection (not recommended for production)
+const defaultPrisma = new PrismaClient();
+const defaultRedis = new Redis({
+  host: process.env. REDIS_HOST || 'localhost',
+  port: process.env.REDIS_PORT || 6379,
+  password: process.env.REDIS_PASSWORD,
+});
 
-    res.json({
-      success: true,
-      data: {
-        sabbath: sabbathLocation,
-        wednesday: wednesdayLocation,
-        friday: fridayLocation
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching active locations:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch active locations',
-      error: error.message
-    });
-  }
-};
+const defaultController = createAttendanceController(defaultPrisma, defaultRedis);
+
+// Export individual controller methods for direct use in routes
+export const markAttendance = defaultController.markAttendance;
+export const getServiceStatus = defaultController.getServiceStatus;
+export const getAttendance = defaultController.getAttendance;
+export const getMemberAttendance = defaultController.getMemberAttendance;
+export const getAllLocations = defaultController.getAllLocations;
+export const createLocation = defaultController. createLocation;
+export const setActiveLocation = defaultController.setActiveLocation;
+export const updateLocation = defaultController.updateLocation;
+export const deleteLocation = defaultController.deleteLocation;
+export const getActiveLocations = defaultController.getActiveLocations;
