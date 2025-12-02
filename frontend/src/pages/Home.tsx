@@ -461,6 +461,7 @@ export default function Home() {
                 <li><button onClick={() => scrollToSection('about')} className="text-gray-400 hover:text-white transition-colors">About Us</button></li>
                 <li><button onClick={() => scrollToSection('ministries')} className="text-gray-400 hover:text-white transition-colors">Ministries</button></li>
                 <li><a href="/register" className="text-gray-400 hover:text-white transition-colors">Register</a></li>
+                <li><a href="/qr-code" className="text-gray-400 hover:text-white transition-colors">QR Code</a></li>
               </ul>
             </div>
 

@@ -326,7 +326,7 @@ export default function Communion() {
                     setViewMode('overview');
                     setSelectedService(null);
                   } else {
-                    navigate('/admin/dashboard');
+                    navigate('/admin');
                   }
                 }}
                 className="flex items-center text-gray-600 hover:text-gray-900"

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Home from './pages/Home';
-import Register from './pages/Register';
+import Register from './pages/Register'
+import QRCodePage from './pages/QRCode';;
 import AdminLogin from './pages/admin/Login';
 import Dashboard from './pages/admin/Dashboard';
 import Members from './pages/admin/Members';
@@ -10,6 +11,7 @@ import Communion from './pages/admin/Communion';
 import Reports from './pages/admin/Reports';
 import ProtectedRoute from './components/ProtectedRoute';
 
+
 function App() {
   return (
     <BrowserRouter>
@@ -17,6 +19,7 @@ function App() {
         {/* Public Routes */}
         <Route path="/" element={<Home />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/qr-code" element={<QRCodePage />} />
         
         {/* Admin Routes */}
         <Route path="/admin/login" element={<AdminLogin />} />
