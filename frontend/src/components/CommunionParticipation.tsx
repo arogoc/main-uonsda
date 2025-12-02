@@ -206,7 +206,7 @@ export default function CommunionParticipation() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                 </div>
-                <p className="font-medium text-sm">UONSDA Member</p>
+                <p className="font-medium text-sm text-green-600">UONSDA Member</p>
               </div>
             </button>
 
@@ -229,7 +229,7 @@ export default function CommunionParticipation() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                 </div>
-                <p className="font-medium text-sm">Visitor</p>
+                <p className="font-medium text-sm text-orange-600">Visitor</p>
               </div>
             </button>
           </div>
@@ -344,8 +344,8 @@ export default function CommunionParticipation() {
           )}
         </button>
 
-        <p className="text-xs text-center text-gray-500">
-          🙏 May the Lord bless you as you partake in this holy sacrament
+        <p className="text-xs text-center text-gray-600">
+          May the Lord bless you as you partake in this holy sacrament
         </p>
       </form>
     </div>

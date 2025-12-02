@@ -47,6 +47,13 @@ router.get('/:id', authenticate, memberController.getMemberById);
  */
 router.put('/:id', authenticate, memberController.updateMember);
 
+
+/** * @route   GET /api/members/:id
+ * @desc    Get single member by ID
+ * @access  Private (All authenticated admins)
+ */
+router.get('/:id', authenticate, memberController.getMemberById);
+
 /**
  * @route   DELETE /api/members/:id
  * @desc    Delete a member

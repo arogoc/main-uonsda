@@ -184,7 +184,7 @@ export default function Home() {
             {/* Stats */}
             <div className="mt-12 grid grid-cols-3 gap-6">
               <div className="text-center">
-                <div className="text-3xl md:text-4xl font-bold text-white mb-1">500+</div>
+                <div className="text-3xl md:text-4xl font-bold text-white mb-1">300+</div>
                 <div className="text-sm text-gray-300">Members</div>
               </div>
               <div className="text-center">
@@ -192,7 +192,7 @@ export default function Home() {
                 <div className="text-sm text-gray-300">Ministries</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl md:text-4xl font-bold text-white mb-1">15+</div>
+                <div className="text-3xl md:text-4xl font-bold text-white mb-1">30+</div>
                 <div className="text-sm text-gray-300">Years</div>
               </div>
             </div>
@@ -210,7 +210,7 @@ export default function Home() {
       </section>
 
       {/* About Section */}
-      <section id="about" className="py-20 bg-gradient-to-b from-white to-gray-50">
+      <section id="about" className="py-14 bg-gradient-to-b from-white to-gray-50 ">
         <div className="container mx-auto px-4">
           <div className="max-w-4xl mx-auto text-center">
             <span className="inline-block px-4 py-2 bg-teal-100 text-teal-800 rounded-full text-sm font-semibold mb-4">
@@ -257,7 +257,7 @@ export default function Home() {
       </section>
 
       {/* Ministries Section */}
-      <section id="ministries" className="py-20 bg-white">
+      <section id="ministries" className="py-20 bg-gray-50">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
             <span className="inline-block px-4 py-2 bg-purple-100 text-purple-800 rounded-full text-sm font-semibold mb-4">
@@ -484,14 +484,14 @@ export default function Home() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  University of Nairobi
+                  University of Nairobi, Main Campus
                 </li>
               </ul>
             </div>
           </div>
 
           <div className="border-t border-gray-800 pt-8 text-center text-gray-400">
-            <p>&copy; 2025 UONSDA Church. All rights reserved.  Built with ❤️ by arogoc</p>
+            <p>&copy; 2025 UONSDA Church. All rights reserved.  Built with ❤️ </p>
           </div>
         </div>
       </footer>
@@ -529,34 +529,56 @@ export default function Home() {
 
       {/* Communion Modal */}
       {showCommunionModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowCommunionModal(false)}
-        >
-          <div className="relative w-full max-w-2xl">
-            {/* Close Button */}
-            <button
-              onClick={() => setShowCommunionModal(false)}
-              className="absolute -top-4 -right-4 z-20 w-12 h-12 bg-white hover:bg-red-500 text-gray-900 hover:text-white rounded-full flex items-center justify-center transition-all shadow-2xl transform hover:scale-110 border-4 border-gray-900"
-              aria-label="Close modal"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            
-            {/* Modal Content */}
-            <div 
-              className="bg-white rounded-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-6 sm:p-8">
-                <CommunionParticipation />
-              </div>
-            </div>
+  <div
+    className="fixed inset-0 bg-black/60 backdrop-blur-xl flex items-center justify-center z-50 p-4 animate-fadeIn"
+    onClick={() => setShowCommunionModal(false)}
+  >
+    <div
+      className="relative w-full max-w-2xl"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Elegant Floating Close Button */}
+      <button
+        onClick={() => setShowCommunionModal(false)}
+        className="absolute -top-16 right-0 z-30 group flex items-center justify-center w-14 h-14 bg-white/90 backdrop-blur-md rounded-full shadow-2xl hover:bg-red-500 hover:scale-110 transition-all duration-300 border border-white/20"
+        aria-label="Close"
+      >
+        <svg className="w-7 h-7 text-gray-800 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      {/* Glassmorphic Modal Card */}
+      <div className="bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/30 overflow-hidden">
+        {/* Gradient Top Bar */}
+        <div className="h-2 bg-gradient-to-r from-purple-600 via-pink-500 to-rose-500" />
+
+        {/* Modal Header */}
+        <div className="px-8 pt-10 pb-6 text-center border-b border-gray-100">
+          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center">
+            <svg className="w-12 h-12 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+            </svg>
           </div>
+          <h2 className="text-3xl font-black text-gray-900">Holy Communion</h2>
+          <p className="mt-3 text-lg text-gray-600">Participate with us in this sacred ordinance</p>
         </div>
-      )}
+
+        {/* Scrollable Content */}
+        <div className="max-h-[70vh] overflow-y-auto px-8 py-8">
+          <CommunionParticipation />
+        </div>
+
+        {/* Subtle Bottom Glow */}
+        <div className="h-1 bg-gradient-to-r from-transparent via-purple-300 to-transparent opacity-30" />
+      </div>
+
+      {/* Floating Decorative Orbs (pure aesthetics) */}
+      <div className="absolute -top-10 -left-10 w-32 h-32 bg-purple-500/20 rounded-full blur-3xl" />
+      <div className="absolute -bottom-16 -right-16 w-40 h-40 bg-pink-500/20 rounded-full blur-3xl" />
+    </div>
+  </div>
+)}
     </div>
   );
 }
