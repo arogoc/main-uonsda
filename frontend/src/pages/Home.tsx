@@ -4,10 +4,9 @@ import CommunionParticipation from '../components/CommunionParticipation';
 import hero_image from '../assets/images/hero-image.jpg';
 import api from '../services/api';
 
-// Import ministry images (you'll need to add these to your assets)
-// For now, we'll use placeholder URLs - replace with actual images
+// Import ministry images
 const ministryImages = {
-  FOJ: '/src/assets/images/foj.jpg',
+  FOJ: '/src/assets/images/foj. jpg',
   ARK: '/src/assets/images/ark.jpg',
   VINEYARD: '/src/assets/images/vineyard.jpg',
   PILGRIMS: '/src/assets/images/pilgrims.jpg' 
@@ -143,7 +142,7 @@ export default function Home() {
               </span>
             </h1>
             <p className="text-xl md:text-2xl text-gray-200 mb-10 leading-relaxed">
-              A vibrant community of faith at the University of Nairobi. 
+              A vibrant community of faith at the University of Nairobi.  
               Growing together in Christ through worship, fellowship, and service.
             </p>
 
@@ -175,7 +174,7 @@ export default function Home() {
                   className="px-8 py-4 bg-purple-600/90 backdrop-blur-md text-white font-bold rounded-xl border-2 border-purple-400/50 hover:bg-purple-700 transition-all flex items-center justify-center animate-pulse"
                 >
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5. 5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
                   </svg>
                   Holy Communion
                 </button>
@@ -244,12 +243,12 @@ export default function Home() {
                 <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1. 274 4.057-5. 064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
                 </div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-3">Our Vision</h3>
                 <p className="text-gray-600">
-                  To be a beacon of hope and transformation, raising Christ-centered leaders who impact the world.
+                  To be a beacon of hope and transformation, raising Christ-centered leaders who impact the world. 
                 </p>
               </div>
             </div>
@@ -368,7 +367,7 @@ export default function Home() {
             <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all">
               <div className="w-16 h-16 bg-teal-100 rounded-2xl flex items-center justify-center mb-6">
                 <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6. 253v13m0-13C10.832 5.477 9.246 5 7. 5 5S4.168 5.477 3 6. 253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4. 5 1.253m0-13C13.168 5. 477 14.754 5 16.5 5c1. 747 0 3.332. 477 4.5 1. 253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4. 5 1.253" />
                 </svg>
               </div>
               <h3 className="text-2xl font-bold text-gray-900 mb-3">Bible Study</h3>
@@ -392,7 +391,7 @@ export default function Home() {
             <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all">
               <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center mb-6">
                 <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4. 318 6.318a4. 5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                 </svg>
               </div>
               <h3 className="text-2xl font-bold text-gray-900 mb-3">Outreach</h3>
@@ -440,17 +439,17 @@ export default function Home() {
               </div>
               <p className="text-gray-400 mb-4 max-w-md">
                 University of Nairobi Seventh-day Adventist Church - 
-                A community of faith, hope, and love.
+                A community of faith, hope, and love. 
               </p>
               <div className="flex space-x-4">
                 <a href="#" className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center hover:bg-teal-600 transition-colors">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5. 373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3. 47h3.047V9. 43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2. 686.235 2.686. 235v2.953H15. 83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-. 532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
                 </a>
                 <a href="#" className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center hover:bg-teal-600 transition-colors">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073z"/><path d="M12 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2. 163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073z"/><path d="M12 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2. 209 0-4-1. 79-4-4 0-2.209 1. 791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11. 845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
                 </a>
                 <a href="#" className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center hover:bg-teal-600 transition-colors">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/></svg>
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-. 951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-. 616v.06a4.923 4.923 0 003. 946 4.827 4. 996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/></svg>
                 </a>
               </div>
             </div>
@@ -470,7 +469,7 @@ export default function Home() {
               <ul className="space-y-3 text-gray-400">
                 <li className="flex items-start">
                   <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002. 22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
                   info@uonsda.com
                 </li>
@@ -492,7 +491,7 @@ export default function Home() {
           </div>
 
           <div className="border-t border-gray-800 pt-8 text-center text-gray-400">
-            <p>&copy; 2025 UONSDA Church. All rights reserved. Built with ❤️ by arogoc</p>
+            <p>&copy; 2025 UONSDA Church. All rights reserved.  Built with ❤️ by arogoc</p>
           </div>
         </div>
       </footer>
@@ -503,23 +502,26 @@ export default function Home() {
           className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setShowAttendanceModal(false)}
         >
-          <div 
-            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close Button - More Visible */}
+          <div className="relative max-w-2xl w-full">
+            {/* Close Button - Outside the card for better visibility */}
             <button
               onClick={() => setShowAttendanceModal(false)}
-              className="sticky top-4 right-4 ml-auto mr-4 mt-4 w-12 h-12 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-all shadow-lg z-20 transform hover:scale-110"
+              className="absolute -top-4 -right-4 z-20 w-12 h-12 bg-white hover:bg-red-500 text-gray-900 hover:text-white rounded-full flex items-center justify-center transition-all shadow-2xl transform hover:scale-110 border-4 border-gray-900 group"
               aria-label="Close modal"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
             
-            <div className="px-8 pb-8 -mt-8">
-              <AttendanceMarker />
+            {/* Card */}
+            <div 
+              className="bg-white rounded-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-slideUp"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6 sm:p-8">
+                <AttendanceMarker />
+              </div>
             </div>
           </div>
         </div>
@@ -531,29 +533,32 @@ export default function Home() {
           className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setShowCommunionModal(false)}
         >
-          <div 
-            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close Button - More Visible */}
+          <div className="relative max-w-2xl w-full">
+            {/* Close Button - Outside the card for better visibility */}
             <button
               onClick={() => setShowCommunionModal(false)}
-              className="sticky top-4 right-4 ml-auto mr-4 mt-4 w-12 h-12 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-all shadow-lg z-20 transform hover:scale-110"
+              className="absolute -top-4 -right-4 z-20 w-12 h-12 bg-white hover:bg-red-500 text-gray-900 hover:text-white rounded-full flex items-center justify-center transition-all shadow-2xl transform hover:scale-110 border-4 border-gray-900 group"
               aria-label="Close modal"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
             
-            <div className="px-8 pb-8 -mt-8">
-              <CommunionParticipation />
+            {/* Card */}
+            <div 
+              className="bg-white rounded-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-slideUp"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6 sm:p-8">
+                <CommunionParticipation />
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Add custom CSS for animations */}
+      {/* Custom CSS for animations */}
       <style>{`
         @keyframes slideUp {
           from {
@@ -566,7 +571,7 @@ export default function Home() {
           }
         }
         
-        .animate-slideUp {
+        . animate-slideUp {
           animation: slideUp 0.3s ease-out;
         }
 
@@ -585,7 +590,7 @@ export default function Home() {
           border-radius: 10px;
         }
 
-        .overflow-y-auto::-webkit-scrollbar-thumb {
+        . overflow-y-auto::-webkit-scrollbar-thumb {
           background: #14b8a6;
           border-radius: 10px;
         }
