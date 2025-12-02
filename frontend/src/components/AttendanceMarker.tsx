@@ -298,8 +298,8 @@ export default function AttendanceMarker() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               <div>
-                <p className="font-semibold text-gray-900">{serviceStatus?.schedule.sabbath.day}</p>
-                <p className="text-sm text-gray-600">{serviceStatus?.schedule.sabbath.time}</p>
+                <p className="font-semibold text-gray-900">{serviceStatus?.schedule?.sabbath?.day || 'Saturday'}</p>
+                <p className="text-sm text-gray-600">{serviceStatus?.schedule?.sabbath?.time || '9:00 AM - 12:00 PM'}</p>
               </div>
             </div>
 
@@ -308,8 +308,8 @@ export default function AttendanceMarker() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               <div>
-                <p className="font-semibold text-gray-900">{serviceStatus?.schedule.wednesdayVespers.day} Vespers</p>
-                <p className="text-sm text-gray-600">{serviceStatus?.schedule.wednesdayVespers.time}</p>
+                <p className="font-semibold text-gray-900">{serviceStatus?.schedule?.wednesdayVespers?.day || 'Wednesday'} Vespers</p>
+                <p className="text-sm text-gray-600">{serviceStatus?.schedule?.wednesdayVespers?.time || '5:00 PM - 7:00 PM'}</p>
               </div>
             </div>
 
@@ -318,8 +318,8 @@ export default function AttendanceMarker() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               <div>
-                <p className="font-semibold text-gray-900">{serviceStatus?.schedule.fridayVespers.day} Vespers</p>
-                <p className="text-sm text-gray-600">{serviceStatus?.schedule.fridayVespers.time}</p>
+                <p className="font-semibold text-gray-900">{serviceStatus?.schedule?.fridayVespers?.day || 'Friday'} Vespers</p>
+                <p className="text-sm text-gray-600">{serviceStatus?.schedule?.fridayVespers?.time || '5:00 PM - 7:00 PM'}</p>
               </div>
             </div>
           </div>
