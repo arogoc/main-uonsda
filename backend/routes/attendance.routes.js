@@ -1,6 +1,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { createRedisClient } from '../config/redis.js';
+import { createNotificationService } from '../notifications/messaging.js'; 
 import { createAttendanceController } from '../controllers/attendance.controller.js';
 import { authenticate, authorize } from '../middleware/auth.middleware.js';
 
@@ -12,7 +13,13 @@ const router = express.Router();
 
 const prisma = new PrismaClient();
 const redis = createRedisClient();
-const attendanceController = createAttendanceController(prisma, redis);
+const notificationService = createNotificationService();  
+
+const attendanceController = createAttendanceController(
+  prisma, 
+  redis, 
+  notificationService  // ✅ ADD THIS AS 3RD PARAMETER
+);
 
 // ============================================
 // PUBLIC ROUTES
@@ -106,7 +113,7 @@ process.on('SIGINT', async () => {
   console.log('SIGINT signal received: closing connections');
   await prisma.$disconnect();
   await redis.quit();
-  process.exit(0);
+  process. exit(0);
 });
 
 export default router;

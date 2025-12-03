@@ -1,13 +1,18 @@
+// ============================================================================
+// ATTENDANCE CONTROLLER - Complete with Notifications
+// ============================================================================
+
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import { createRedisClient } from '../config/redis.js';  // ✅ Import centralized Redis
+import { createRedisClient } from '../config/redis.js';
+import { createNotificationService } from '../notifications/messaging.js';
 
 // ============================================================================
 // CONFIGURATION & CONSTANTS
 // ============================================================================
 
 const CONFIG = {
-  CHURCH_TIMEZONE: 'Africa/Nairobi', // Configure based on church location
+  CHURCH_TIMEZONE: 'Africa/Nairobi',
   DEFAULT_RADIUS: 100, // meters
   MAX_ATTENDANCE_HISTORY: 50,
   DEVICE_FINGERPRINT_TTL: 86400, // 24 hours in seconds
@@ -23,7 +28,7 @@ const SERVICE_SCHEDULES = {
   },
   WEDNESDAY_VESPERS: {
     day: 3, // Wednesday
-    startHour: 17,
+    startHour: 12,
     endHour: 20,
     name: 'Wednesday Vespers',
     displayTime: 'Wednesday 5:00 PM - 8:00 PM',
@@ -48,13 +53,13 @@ const markAttendanceSchema = z.object({
   deviceId: z.string().min(10, 'Invalid device ID'),
 });
 
-const createLocationSchema = z. object({
-  name: z. string().min(1). max(100),
+const createLocationSchema = z.object({
+  name: z.string().min(1). max(100),
   description: z.string().optional(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   radius: z.number().int().min(10).max(1000). default(CONFIG.DEFAULT_RADIUS),
-  address: z.string(). optional(),
+  address: z.string().optional(),
 });
 
 const setActiveLocationSchema = z.object({
@@ -87,7 +92,7 @@ class AttendanceError extends Error {
 
 class NotServiceTimeError extends AttendanceError {
   constructor() {
-    const serviceSchedule = Object.entries(SERVICE_SCHEDULES).reduce(
+    const serviceSchedule = Object.entries(SERVICE_SCHEDULES). reduce(
       (acc, [key, val]) => {
         acc[key] = val.displayTime;
         return acc;
@@ -132,9 +137,10 @@ class DuplicateDeviceError extends AttendanceError {
 // ============================================================================
 
 class AttendanceService {
-  constructor(prisma, redis, config = CONFIG) {
+  constructor(prisma, redis, notificationService, config = CONFIG) {
     this.prisma = prisma;
-    this. redis = redis;
+    this.redis = redis;
+    this.notificationService = notificationService;
     this. config = config;
   }
 
@@ -144,11 +150,6 @@ class AttendanceService {
 
   /**
    * Calculate distance between two coordinates using Haversine formula
-   * @param {number} lat1 - Latitude of point 1
-   * @param {number} lon1 - Longitude of point 1
-   * @param {number} lat2 - Latitude of point 2
-   * @param {number} lon2 - Longitude of point 2
-   * @returns {number} Distance in meters
    */
   calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371e3; // Earth's radius in meters
@@ -160,18 +161,17 @@ class AttendanceService {
     const a =
       Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
       Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math. atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;
   }
 
   /**
    * Get current date/time in church's timezone
-   * @returns {Date} Current date in church timezone
    */
   getChurchTime() {
     return new Date(
-      new Date(). toLocaleString('en-US', {
+      new Date().toLocaleString('en-US', {
         timeZone: this.config.CHURCH_TIMEZONE,
       })
     );
@@ -179,7 +179,6 @@ class AttendanceService {
 
   /**
    * Get day boundaries for today in church timezone
-   * @returns {{ start: Date, end: Date }}
    */
   getTodayBoundaries() {
     const now = this.getChurchTime();
@@ -192,7 +191,6 @@ class AttendanceService {
 
   /**
    * Determine current service type based on day and time
-   * @returns {{ serviceType: string|null, isServiceTime: boolean }}
    */
   getCurrentServiceInfo() {
     const now = this.getChurchTime();
@@ -214,8 +212,6 @@ class AttendanceService {
 
   /**
    * Get active location for a specific service type
-   * @param {string} serviceType - Service type
-   * @returns {Promise<Object|null>} Church location
    */
   async getActiveLocationForService(serviceType) {
     const whereClause = {};
@@ -237,13 +233,9 @@ class AttendanceService {
 
   /**
    * Check and set device fingerprint in Redis
-   * @param {string} deviceId - Device identifier
-   * @param {string} email - Member email
-   * @param {string} serviceType - Service type
-   * @throws {DuplicateDeviceError} If device already used by different member
    */
   async checkDeviceFingerprint(deviceId, email, serviceType) {
-    const today = new Date(). toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
     const deviceKey = `attendance:device:${deviceId}:${today}:${serviceType}`;
 
     const existingEmail = await this.redis.get(deviceKey);
@@ -252,12 +244,52 @@ class AttendanceService {
       throw new DuplicateDeviceError();
     }
 
-    // Set with TTL
     await this.redis.setex(
       deviceKey,
-      this.config.DEVICE_FINGERPRINT_TTL,
+      this.config. DEVICE_FINGERPRINT_TTL,
       email
     );
+  }
+
+  /**
+   * Check if this is member's first attendance
+   */
+  async isFirstAttendance(memberId) {
+    const count = await this.prisma.attendance.count({
+      where: { memberId },
+    });
+    return count === 0;
+  }
+
+  /**
+   * Calculate attendance streak for a member
+   */
+  async calculateStreak(memberId, serviceType) {
+    const attendances = await this.prisma. attendance.findMany({
+      where: { memberId, serviceType },
+      orderBy: { attendedAt: 'desc' },
+      take: 20,
+    });
+
+    if (attendances.length === 0) return 0;
+
+    let streak = 1;
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+
+    for (let i = 0; i < attendances.length - 1; i++) {
+      const current = new Date(attendances[i].attendedAt);
+      const previous = new Date(attendances[i + 1].attendedAt);
+      const diff = current - previous;
+
+      // Check if within 7-14 days (allowing for one week gap)
+      if (diff >= oneWeek && diff <= oneWeek * 2) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+
+    return streak;
   }
 
   // ============================================================================
@@ -266,19 +298,13 @@ class AttendanceService {
 
   /**
    * Mark attendance for a member
-   * @param {Object} data - Attendance data
-   * @param {string} data.email - Member email
-   * @param {number} data.latitude - Current latitude
-   * @param {number} data.longitude - Current longitude
-   * @param {string} data.deviceId - Device identifier
-   * @returns {Promise<Object>} Attendance record
    */
   async markAttendance(data) {
     const { email, latitude, longitude, deviceId } = data;
 
     // Check service time
     const { serviceType, isServiceTime } = this.getCurrentServiceInfo();
-    if (!isServiceTime || !serviceType) {
+    if (! isServiceTime || !serviceType) {
       throw new NotServiceTimeError();
     }
 
@@ -323,7 +349,7 @@ class AttendanceService {
 
     // Check for duplicate attendance
     const { start, end } = this.getTodayBoundaries();
-    const existingAttendance = await this.prisma.attendance.findFirst({
+    const existingAttendance = await this. prisma.attendance.findFirst({
       where: {
         memberId: member.id,
         serviceType,
@@ -343,6 +369,9 @@ class AttendanceService {
         }
       );
     }
+
+    // Check if first attendance
+    const isFirstTime = await this.isFirstAttendance(member.id);
 
     // Create attendance record
     const attendance = await this.prisma.attendance. create({
@@ -366,15 +395,109 @@ class AttendanceService {
       },
     });
 
+    // ✅ SEND IMMEDIATE CONFIRMATION EMAIL
+    try {
+      await this.notificationService.sendAttendanceConfirmation({
+        member: attendance.member,
+        serviceType: attendance.serviceType,
+        attendedAt: attendance.attendedAt,
+        locationName: attendance. locationName,
+      });
+      console.log(`✅ Confirmation email sent to ${attendance.member. email}`);
+    } catch (emailError) {
+      console.error('❌ Failed to send confirmation email:', emailError);
+    }
+
+    // ✅ CHECK FOR MILESTONES (Fire and forget - don't wait)
+    this.checkAndSendMilestoneNotifications(member, serviceType, isFirstTime). catch(err => {
+      console.error('❌ Failed to check milestones:', err);
+    });
+
     return {
-      message: `Attendance marked successfully at ${churchLocation.name}!  🙏`,
+      message: `Attendance marked successfully at ${churchLocation.name}! 🙏`,
       data: attendance,
+      isFirstTime,
     };
   }
 
   /**
+   * Check and send milestone notifications (async, non-blocking)
+   */
+  async checkAndSendMilestoneNotifications(member, serviceType, isFirstTime) {
+    try {
+      // First attendance milestone
+      if (isFirstTime) {
+        await this.notificationService.sendMilestoneNotification(
+          member,
+          'FIRST_TIME'
+        );
+        console.log(`🎉 First-time milestone sent to ${member.email}`);
+        return; // Don't check other milestones for first-timers
+      }
+
+      // Calculate streak
+      const streak = await this.calculateStreak(member.id, serviceType);
+
+      // Check streak milestones
+      if (streak === 5) {
+        await this.notificationService.sendMilestoneNotification(
+          member,
+          'STREAK_5',
+          { serviceType }
+        );
+        console.log(`🔥 5-week streak milestone sent to ${member.email}`);
+      } else if (streak === 10) {
+        await this.notificationService.sendMilestoneNotification(
+          member,
+          'STREAK_10'
+        );
+        console.log(`⭐ 10-week streak milestone sent to ${member.email}`);
+      }
+
+      // Check monthly perfect attendance
+      const now = new Date();
+      const startOfMonth = new Date(now. getFullYear(), now.getMonth(), 1);
+      const monthlyCount = await this.prisma.attendance.count({
+        where: {
+          memberId: member.id,
+          attendedAt: { gte: startOfMonth },
+        },
+      });
+
+      // If it's the last week of the month and they have perfect attendance
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      if (now.getDate() >= daysInMonth - 7 && monthlyCount >= 12) {
+        await this.notificationService.sendMilestoneNotification(
+          member,
+          'MONTHLY_PERFECT',
+          { monthlyCount }
+        );
+        console.log(`👑 Perfect monthly attendance sent to ${member.email}`);
+      }
+
+      // Check yearly milestone
+      const startOfYear = new Date(now. getFullYear(), 0, 1);
+      const yearlyCount = await this.prisma.attendance.count({
+        where: {
+          memberId: member.id,
+          attendedAt: { gte: startOfYear },
+        },
+      });
+
+      if (yearlyCount === 100) {
+        await this.notificationService.sendMilestoneNotification(
+          member,
+          'YEARLY_100'
+        );
+        console.log(`🏆 100 attendances milestone sent to ${member.email}`);
+      }
+    } catch (error) {
+      console.error('Error checking milestones:', error);
+    }
+  }
+
+  /**
    * Get service status and schedule
-   * @returns {Promise<Object>} Service status information
    */
   async getServiceStatus() {
     const { serviceType, isServiceTime } = this.getCurrentServiceInfo();
@@ -424,8 +547,6 @@ class AttendanceService {
 
   /**
    * Get attendance records with filters
-   * @param {Object} filters - Query filters
-   * @returns {Promise<Object>} Attendance records and statistics
    */
   async getAttendance(filters) {
     const where = {};
@@ -441,7 +562,7 @@ class AttendanceService {
     }
 
     if (filters.memberId) {
-      where.memberId = filters. memberId;
+      where.memberId = filters.memberId;
     }
 
     const [attendances, byService] = await Promise.all([
@@ -476,8 +597,6 @@ class AttendanceService {
 
   /**
    * Get member attendance history
-   * @param {string} email - Member email
-   * @returns {Promise<Object>} Member attendance data
    */
   async getMemberAttendance(email) {
     const member = await this.prisma.member.findUnique({
@@ -490,7 +609,7 @@ class AttendanceService {
       },
     });
 
-    if (! member) {
+    if (!member) {
       throw new AttendanceError('Member not found', 404);
     }
 
@@ -515,7 +634,6 @@ class AttendanceService {
 
   /**
    * Get all saved church locations
-   * @returns {Promise<Array>} List of church locations
    */
   async getAllLocations() {
     return await this.prisma.churchLocation.findMany({
@@ -526,12 +644,8 @@ class AttendanceService {
 
   /**
    * Create a new church location
-   * @param {Object} data - Location data
-   * @param {string} createdBy - Admin ID creating the location
-   * @returns {Promise<Object>} Created location
    */
   async createLocation(data, createdBy) {
-    // Check for duplicate name
     const existing = await this.prisma.churchLocation.findUnique({
       where: { name: data.name },
     });
@@ -557,12 +671,9 @@ class AttendanceService {
 
   /**
    * Set active location for specific service(s)
-   * @param {string} locationId - Location ID
-   * @param {Array<string>} services - Array of service types
-   * @returns {Promise<Object>} Updated location
    */
   async setActiveLocation(locationId, services) {
-    const location = await this. prisma.churchLocation.findUnique({
+    const location = await this.prisma.churchLocation. findUnique({
       where: { id: locationId },
     });
 
@@ -570,7 +681,6 @@ class AttendanceService {
       throw new AttendanceError('Location not found', 404);
     }
 
-    // Use transaction to ensure atomicity
     return await this.prisma.$transaction(async (tx) => {
       const updateData = {};
 
@@ -606,9 +716,6 @@ class AttendanceService {
 
   /**
    * Update a church location
-   * @param {string} locationId - Location ID
-   * @param {Object} data - Updated location data
-   * @returns {Promise<Object>} Updated location
    */
   async updateLocation(locationId, data) {
     return await this.prisma.churchLocation.update({
@@ -619,10 +726,9 @@ class AttendanceService {
 
   /**
    * Delete a church location
-   * @param {string} locationId - Location ID
    */
   async deleteLocation(locationId) {
-    const location = await this.prisma.churchLocation. findUnique({
+    const location = await this.prisma. churchLocation.findUnique({
       where: { id: locationId },
     });
 
@@ -637,14 +743,13 @@ class AttendanceService {
       );
     }
 
-    await this.prisma.churchLocation. delete({
+    await this.prisma. churchLocation.delete({
       where: { id: locationId },
     });
   }
 
   /**
    * Get currently active locations for all services
-   * @returns {Promise<Object>} Active locations for each service
    */
   async getActiveLocations() {
     const [sabbath, wednesday, friday] = await Promise.all([
@@ -674,8 +779,6 @@ class AttendanceController {
 
   /**
    * Handle errors and send appropriate response
-   * @param {Error} error - The error object
-   * @param {Object} res - Express response object
    */
   handleError(error, res) {
     console.error('Attendance Error:', error);
@@ -699,7 +802,7 @@ class AttendanceController {
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
-      error: error.message || 'Unknown error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Unknown error',
     });
   }
 
@@ -725,7 +828,7 @@ class AttendanceController {
    */
   getServiceStatus = async (req, res) => {
     try {
-      const result = await this. service.getServiceStatus();
+      const result = await this.service.getServiceStatus();
       res.json({ success: true, data: result });
     } catch (error) {
       this.handleError(error, res);
@@ -869,17 +972,14 @@ class AttendanceController {
 }
 
 // ============================================================================
-// FACTORY FUNCTION (Dependency Injection Setup)
+// FACTORY FUNCTION (Dependency Injection)
 // ============================================================================
 
 /**
  * Create an attendance controller with all dependencies
- * @param {PrismaClient} prisma - Prisma client instance
- * @param {Redis} redis - Redis client instance
- * @returns {AttendanceController} Controller instance
  */
-export function createAttendanceController(prisma, redis) {
-  const service = new AttendanceService(prisma, redis);
+export function createAttendanceController(prisma, redis, notificationService) {
+  const service = new AttendanceService(prisma, redis, notificationService);
   return new AttendanceController(service);
 }
 
@@ -887,19 +987,23 @@ export function createAttendanceController(prisma, redis) {
 // DEFAULT EXPORT (for backward compatibility)
 // ============================================================================
 
-// ✅ FIXED: Use centralized Redis client
 const defaultPrisma = new PrismaClient();
-const defaultRedis = createRedisClient();  // ✅ Use factory function! 
+const defaultRedis = createRedisClient();
+const defaultNotificationService = createNotificationService();
 
-const defaultController = createAttendanceController(defaultPrisma, defaultRedis);
+const defaultController = createAttendanceController(
+  defaultPrisma,
+  defaultRedis,
+  defaultNotificationService
+);
 
 // Export individual controller methods for direct use in routes
 export const markAttendance = defaultController.markAttendance;
 export const getServiceStatus = defaultController.getServiceStatus;
 export const getAttendance = defaultController.getAttendance;
-export const getMemberAttendance = defaultController. getMemberAttendance;
-export const getAllLocations = defaultController. getAllLocations;
-export const createLocation = defaultController.createLocation;
+export const getMemberAttendance = defaultController.getMemberAttendance;
+export const getAllLocations = defaultController.getAllLocations;
+export const createLocation = defaultController. createLocation;
 export const setActiveLocation = defaultController.setActiveLocation;
 export const updateLocation = defaultController.updateLocation;
 export const deleteLocation = defaultController.deleteLocation;
