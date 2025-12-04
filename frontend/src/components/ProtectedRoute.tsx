@@ -18,7 +18,7 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
   if (allowedRoles && allowedRoles.length > 0) {
     try {
       const admin = JSON.parse(adminData);
-      if (! allowedRoles.includes(admin.role)) {
+      if (!allowedRoles.includes(admin.role)) {
         // ✅ Smart redirect based on user's actual role
         const redirectPath = admin.role === 'PASTORATE' ? '/admin/pastorate' : '/admin/dashboard';
         
@@ -26,10 +26,10 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
           <div className="min-h-screen bg-gray-100 flex items-center justify-center">
             <div className="bg-white p-8 rounded-lg shadow-lg max-w-md text-center">
               <svg className="w-16 h-16 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1. 333-2.694-1. 333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h2>
-              <p className="text-gray-600 mb-4">You don't have permission to access this page. </p>
+              <p className="text-gray-600 mb-4">This page requires a PASTORATE account. Ensure you're logged in with a PASTORATE account to access this feature.</p>
               <a 
                 href={redirectPath} 
                 className="inline-block px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition"
