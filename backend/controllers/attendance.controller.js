@@ -65,7 +65,7 @@ const createLocationSchema = z.object({
 const setActiveLocationSchema = z.object({
   services: z
     .array(z.enum(['SABBATH_MORNING', 'WEDNESDAY_VESPERS', 'FRIDAY_VESPERS']))
-    .min(1),
+    .min(0), // ✅ This allows empty arrays
 });
 
 const attendanceQuerySchema = z.object({
@@ -673,46 +673,58 @@ class AttendanceService {
    * Set active location for specific service(s)
    */
   async setActiveLocation(locationId, services) {
-    const location = await this.prisma.churchLocation. findUnique({
-      where: { id: locationId },
-    });
+  const location = await this.prisma.churchLocation.findUnique({
+    where: { id: locationId },
+  });
 
-    if (!location) {
-      throw new AttendanceError('Location not found', 404);
-    }
+  if (!location) {
+    throw new AttendanceError('Location not found', 404);
+  }
 
-    return await this.prisma.$transaction(async (tx) => {
-      const updateData = {};
-
-      for (const service of services) {
-        switch (service) {
-          case 'SABBATH_MORNING':
-            await tx.churchLocation.updateMany({
-              data: { isActiveSabbath: false },
-            });
-            updateData.isActiveSabbath = true;
-            break;
-          case 'WEDNESDAY_VESPERS':
-            await tx.churchLocation.updateMany({
-              data: { isActiveWednesday: false },
-            });
-            updateData.isActiveWednesday = true;
-            break;
-          case 'FRIDAY_VESPERS':
-            await tx.churchLocation.updateMany({
-              data: { isActiveFriday: false },
-            });
-            updateData.isActiveFriday = true;
-            break;
-        }
-      }
-
+  return await this.prisma.$transaction(async (tx) => {
+    // If services array is empty, deactivate all services for this location
+    if (services.length === 0) {
       return await tx.churchLocation.update({
         where: { id: locationId },
-        data: updateData,
+        data: {
+          isActiveSabbath: false,
+          isActiveWednesday: false,
+          isActiveFriday: false,
+        },
       });
+    }
+
+    const updateData = {};
+
+    for (const service of services) {
+      switch (service) {
+        case 'SABBATH_MORNING':
+          await tx.churchLocation.updateMany({
+            data: { isActiveSabbath: false },
+          });
+          updateData.isActiveSabbath = true;
+          break;
+        case 'WEDNESDAY_VESPERS':
+          await tx.churchLocation.updateMany({
+            data: { isActiveWednesday: false },
+          });
+          updateData.isActiveWednesday = true;
+          break;
+        case 'FRIDAY_VESPERS':
+          await tx.churchLocation.updateMany({
+            data: { isActiveFriday: false },
+          });
+          updateData.isActiveFriday = true;
+          break;
+      }
+    }
+
+    return await tx.churchLocation.update({
+      where: { id: locationId },
+      data: updateData,
     });
-  }
+  });
+}
 
   /**
    * Update a church location
@@ -728,25 +740,28 @@ class AttendanceService {
    * Delete a church location
    */
   async deleteLocation(locationId) {
-    const location = await this.prisma. churchLocation.findUnique({
-      where: { id: locationId },
-    });
+  const location = await this.prisma.churchLocation.findUnique({
+    where: { id: locationId },
+  });
 
-    if (
-      location?. isActiveSabbath ||
-      location?.isActiveWednesday ||
-      location?.isActiveFriday
-    ) {
-      throw new AttendanceError(
-        'Cannot delete a location that is active for any service.  Please deactivate it first.',
-        400
-      );
-    }
-
-    await this.prisma. churchLocation.delete({
-      where: { id: locationId },
-    });
+  if (!location) {
+    throw new AttendanceError('Location not found', 404);
   }
+
+  // Auto-deactivate all services before deleting
+  await this.prisma.churchLocation.update({
+    where: { id: locationId },
+    data: {
+      isActiveSabbath: false,
+      isActiveWednesday: false,
+      isActiveFriday: false,
+    },
+  });
+
+  await this.prisma.churchLocation.delete({
+    where: { id: locationId },
+  });
+}
 
   /**
    * Get currently active locations for all services

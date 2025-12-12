@@ -242,26 +242,30 @@ export default function LocationManagement() {
               </div>
 
               <div className="border-t pt-4">
-                <p className="text-sm font-medium text-gray-700 mb-3">Active for:</p>
+                <p className="text-sm font-medium text-gray-700 mb-3">Active for services:</p>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => {
                       const services = location.isActiveSabbath ? [] : ['SABBATH_MORNING'];
                       setActiveForServices(location.id, services);
                     }}
-                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                       location.isActiveSabbath
-                        ? 'bg-teal-100 text-teal-800 border-2 border-teal-600'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        ? 'bg-teal-600 text-white shadow-md hover:bg-teal-700'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                     }`}
                   >
-                    <span className="flex items-center">
-                      {location.isActiveSabbath && (
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
+                    <span className="flex items-center gap-1.5">
+                      {location.isActiveSabbath ? (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Sabbath Active
+                        </>
+                      ) : (
+                        'Activate Sabbath'
                       )}
-                      Sabbath
                     </span>
                   </button>
 
@@ -270,19 +274,23 @@ export default function LocationManagement() {
                       const services = location.isActiveWednesday ? [] : ['WEDNESDAY_VESPERS'];
                       setActiveForServices(location.id, services);
                     }}
-                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                       location.isActiveWednesday
-                        ? 'bg-blue-100 text-blue-800 border-2 border-blue-600'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                     }`}
                   >
-                    <span className="flex items-center">
-                      {location.isActiveWednesday && (
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
+                    <span className="flex items-center gap-1.5">
+                      {location.isActiveWednesday ? (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Wednesday Active
+                        </>
+                      ) : (
+                        'Activate Wednesday'
                       )}
-                      Wednesday
                     </span>
                   </button>
 
@@ -291,23 +299,29 @@ export default function LocationManagement() {
                       const services = location.isActiveFriday ? [] : ['FRIDAY_VESPERS'];
                       setActiveForServices(location.id, services);
                     }}
-                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                       location.isActiveFriday
-                        ? 'bg-purple-100 text-purple-800 border-2 border-purple-600'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        ? 'bg-purple-600 text-white shadow-md hover:bg-purple-700'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                     }`}
                   >
-                    <span className="flex items-center">
-                      {location.isActiveFriday && (
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
+                    <span className="flex items-center gap-1.5">
+                      {location.isActiveFriday ? (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Friday Active
+                        </>
+                      ) : (
+                        'Activate Friday'
                       )}
-                      Friday
                     </span>
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Click to toggle active status for each service</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Click to {location.isActiveSabbath || location.isActiveWednesday || location.isActiveFriday ? 'deactivate or activate' : 'activate'} services
+                </p>
               </div>
             </div>
           ))}
