@@ -120,20 +120,21 @@ export default function LocationManagement() {
     }
   };
 
-  const setActiveForServices = async (locationId: string, services: string[]) => {
-    try {
-      const response = await api.put(`/api/attendance/locations/${locationId}/activate`, {
-        services
-      });
+  const setActiveForServices = async (locationId: string, services: string[], deactivate: boolean = false) => {
+  try {
+    const response = await api.put(`/api/attendance/locations/${locationId}/activate`, {
+      services,
+      deactivate  // NEW: send the deactivate flag
+    });
 
-      if (response.data.success) {
-        setMessage({ type: 'success', text: response.data.message });
-        fetchLocations();
-      }
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to activate location' });
+    if (response.data.success) {
+      setMessage({ type: 'success', text: response.data.message });
+      fetchLocations();
     }
-  };
+  } catch (err: any) {
+    setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update location' });
+  }
+};
 
   const deleteLocation = async (locationId: string) => {
     if (!confirm('Are you sure you want to delete this location?')) return;
@@ -246,8 +247,13 @@ export default function LocationManagement() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => {
-                      const services = location.isActiveSabbath ? [] : ['SABBATH_MORNING'];
-                      setActiveForServices(location.id, services);
+                      if (location.isActiveSabbath) {
+                        // Deactivate
+                        setActiveForServices(location.id, ['SABBATH_MORNING'], true);
+                      } else {
+                        // Activate
+                        setActiveForServices(location.id, ['SABBATH_MORNING'], false);
+                      }
                     }}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                       location.isActiveSabbath
@@ -271,8 +277,13 @@ export default function LocationManagement() {
 
                   <button
                     onClick={() => {
-                      const services = location.isActiveWednesday ? [] : ['WEDNESDAY_VESPERS'];
-                      setActiveForServices(location.id, services);
+                      if (location.isActiveWednesday) {
+                        // Deactivate
+                        setActiveForServices(location.id, ['WEDNESDAY_VESPERS'], true);
+                      } else {
+                        // Activate
+                        setActiveForServices(location.id, ['WEDNESDAY_VESPERS'], false);
+                      }
                     }}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                       location.isActiveWednesday
@@ -296,8 +307,13 @@ export default function LocationManagement() {
 
                   <button
                     onClick={() => {
-                      const services = location.isActiveFriday ? [] : ['FRIDAY_VESPERS'];
-                      setActiveForServices(location.id, services);
+                      if (location.isActiveFriday) {
+                        // Deactivate
+                        setActiveForServices(location.id, ['FRIDAY_VESPERS'], true);
+                      } else {
+                        // Activate
+                        setActiveForServices(location.id, ['FRIDAY_VESPERS'], false);
+                      }
                     }}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                       location.isActiveFriday

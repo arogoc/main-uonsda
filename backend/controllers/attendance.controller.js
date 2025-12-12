@@ -65,7 +65,8 @@ const createLocationSchema = z.object({
 const setActiveLocationSchema = z.object({
   services: z
     .array(z.enum(['SABBATH_MORNING', 'WEDNESDAY_VESPERS', 'FRIDAY_VESPERS']))
-    .min(0), // ✅ This allows empty arrays
+    .min(1),
+  deactivate: z.boolean().optional(), // NEW: flag to indicate deactivation
 });
 
 const attendanceQuerySchema = z.object({
@@ -672,7 +673,7 @@ class AttendanceService {
   /**
    * Set active location for specific service(s)
    */
-  async setActiveLocation(locationId, services) {
+  async setActiveLocation(locationId, services, deactivate = false) {
   const location = await this.prisma.churchLocation.findUnique({
     where: { id: locationId },
   });
@@ -682,39 +683,44 @@ class AttendanceService {
   }
 
   return await this.prisma.$transaction(async (tx) => {
-    // If services array is empty, deactivate all services for this location
-    if (services.length === 0) {
-      return await tx.churchLocation.update({
-        where: { id: locationId },
-        data: {
-          isActiveSabbath: false,
-          isActiveWednesday: false,
-          isActiveFriday: false,
-        },
-      });
-    }
-
     const updateData = {};
 
     for (const service of services) {
       switch (service) {
         case 'SABBATH_MORNING':
-          await tx.churchLocation.updateMany({
-            data: { isActiveSabbath: false },
-          });
-          updateData.isActiveSabbath = true;
+          if (deactivate) {
+            // Just deactivate this location's Sabbath
+            updateData.isActiveSabbath = false;
+          } else {
+            // Deactivate all other locations, activate this one
+            await tx.churchLocation.updateMany({
+              where: { id: { not: locationId } },
+              data: { isActiveSabbath: false },
+            });
+            updateData.isActiveSabbath = true;
+          }
           break;
         case 'WEDNESDAY_VESPERS':
-          await tx.churchLocation.updateMany({
-            data: { isActiveWednesday: false },
-          });
-          updateData.isActiveWednesday = true;
+          if (deactivate) {
+            updateData.isActiveWednesday = false;
+          } else {
+            await tx.churchLocation.updateMany({
+              where: { id: { not: locationId } },
+              data: { isActiveWednesday: false },
+            });
+            updateData.isActiveWednesday = true;
+          }
           break;
         case 'FRIDAY_VESPERS':
-          await tx.churchLocation.updateMany({
-            data: { isActiveFriday: false },
-          });
-          updateData.isActiveFriday = true;
+          if (deactivate) {
+            updateData.isActiveFriday = false;
+          } else {
+            await tx.churchLocation.updateMany({
+              where: { id: { not: locationId } },
+              data: { isActiveFriday: false },
+            });
+            updateData.isActiveFriday = true;
+          }
           break;
       }
     }
@@ -919,19 +925,21 @@ class AttendanceController {
    * @access Private (CLERK, ELDER)
    */
   setActiveLocation = async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { services } = setActiveLocationSchema.parse(req. body);
-      const result = await this.service.setActiveLocation(id, services);
-      res.json({
-        success: true,
-        message: `${result.name} is now active for selected services`,
-        data: result,
-      });
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  };
+  try {
+    const { id } = req.params;
+    const { services, deactivate } = setActiveLocationSchema.parse(req.body);
+    const result = await this.service.setActiveLocation(id, services, deactivate);
+    res.json({
+      success: true,
+      message: deactivate 
+        ? `Services deactivated for ${result.name}`
+        : `${result.name} is now active for selected services`,
+      data: result,
+    });
+  } catch (error) {
+    this.handleError(error, res);
+  }
+};
 
   /**
    * Update a church location
