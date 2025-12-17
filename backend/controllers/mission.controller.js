@@ -52,14 +52,14 @@ class MissionaryDistributor {
     this.registrations = registrations;
     this.numberOfSites = numberOfSites;
     
-    // Configurable weights for the scoring system
+    // ✅ UPDATED WEIGHTS - Prioritize balance over diversity
     this.weights = {
-      totalBalance: 50,
-      genderBalance: 45,
-      experienceBalance: 30,
-      campusDiversity: 25,
-      yearDiversity: 15,
-      visitorSpread: 20,
+      totalBalance: 200,      // HIGHEST - keep sites same size
+      genderBalance: 150,     // VERY HIGH - prevent all-male/female sites
+      experienceBalance: 100, // HIGH - mix first-timers with veterans
+      campusDiversity: 80,    // MEDIUM-HIGH - spread campuses evenly
+      visitorSpread: 100,     // HIGH - don't dump all visitors in one site
+      yearDiversity: 40,      // MEDIUM - spread years
     };
     
     this.maxOptimizationPasses = 10;
@@ -103,18 +103,18 @@ class MissionaryDistributor {
     console.log('\n📊 FINAL DISTRIBUTION SUMMARY:');
     console.log(`  Total to distribute: ${this.registrations.length}`);
     console.log(`  Total distributed: ${totalDistributed}`);
-    console.log(`  Missing:  ${this.registrations.length - totalDistributed}`);
+    console.log(`  Missing: ${this.registrations.length - totalDistributed}`);
 
     if (totalDistributed !== this.registrations.length) {
-      console.error(`\n❌ CRITICAL ERROR: ${this.registrations.length - totalDistributed} people were not assigned!`);
+      console.error(`\n❌ CRITICAL ERROR: ${this.registrations.length - totalDistributed} people were not assigned! `);
       
       // Find missing people
       const assignedIds = new Set();
       this.sites.forEach(site => {
-        site.missionaries.forEach(m => assignedIds.add(m. id));
+        site.missionaries.forEach(m => assignedIds.add(m.id));
       });
-      const missing = this.registrations.filter(r => !assignedIds. has(r.id));
-      console.error('Missing:', missing.map(m => `${m.firstName} ${m.lastName}`));
+      const missing = this.registrations.filter(r => !assignedIds.has(r.id));
+      console.error('Missing:', missing.map(m => `${m.firstName} ${m. lastName}`));
     }
 
     console.log('✅ Distribution complete');
@@ -122,53 +122,87 @@ class MissionaryDistributor {
   }
 
   // ========================================
-  // PHASE 1: INTELLIGENT INITIAL DISTRIBUTION
+  // PHASE 1: STRATIFIED INITIAL DISTRIBUTION
   // ========================================
   
   initialBalancedDistribution() {
-    const shuffled = this.shuffleArray([...this.registrations]);
-    const groups = this.groupByCharacteristics(shuffled);
+    console.log(`🎯 Starting strategic distribution of ${this.registrations.length} people to ${this.numberOfSites} sites...`);
     
-    // Interleave groups to prevent clustering
-    const interleavedQueue = this.interleaveGroups(groups);
+    // ✅ NEW:  Create stratified buckets for EVEN distribution
+    const buckets = this.createStratifiedBuckets();
     
-    console.log(`🎯 Starting initial assignment of ${interleavedQueue.length} people to ${this.numberOfSites} sites...`);
-    
-    // CRITICAL FIX: Use round-robin for initial distribution to ensure all sites get people
-    // This prevents the algorithm from getting stuck filling only the first few sites
-    const peoplePerSite = Math.floor(interleavedQueue.length / this.numberOfSites);
-    const remainder = interleavedQueue.length % this.numberOfSites;
-    
-    console.log(`  Target: ${peoplePerSite} people per site, with ${remainder} extra`);
-    
-    // First pass: Give everyone their fair share using round-robin
-    let currentSiteIndex = 0;
-    interleavedQueue.forEach((person, index) => {
-      // Use round-robin assignment
-      const targetSite = this.sites[currentSiteIndex];
-      this.addToSite(targetSite, person);
-      
-      // Move to next site in round-robin
-      currentSiteIndex = (currentSiteIndex + 1) % this.numberOfSites;
-      
-      if ((index + 1) % 20 === 0) {
-        console.log(`  Assigned ${index + 1}/${interleavedQueue.length} people`);
+    console.log('📦 Created stratified buckets:');
+    Object.entries(buckets).forEach(([key, people]) => {
+      if (people.length > 0) {
+        console.log(`  ${key}: ${people.length} people`);
       }
+    });
+    
+    // ✅ NEW: Deal people round-robin from each bucket
+    let currentSiteIndex = 0;
+    let totalAssigned = 0;
+    
+    // Process each bucket and deal people one-by-one to sites
+    Object.keys(buckets).forEach(bucketKey => {
+      const shuffled = this.shuffleArray(buckets[bucketKey]);
+      
+      shuffled.forEach(person => {
+        const targetSite = this.sites[currentSiteIndex];
+        this.addToSite(targetSite, person);
+        totalAssigned++;
+        
+        // Move to next site (round-robin)
+        currentSiteIndex = (currentSiteIndex + 1) % this.numberOfSites;
+        
+        if (totalAssigned % 20 === 0) {
+          console.log(`  Assigned ${totalAssigned}/${this.registrations.length} people`);
+        }
+      });
     });
     
     console.log('✅ Initial distribution complete');
     console.log('📊 Sites after initial distribution:');
     this.sites.forEach(site => {
-      console.log(`  Site ${site.siteNumber}: ${site.stats.total} people (M: ${site.stats.male}, F: ${site.stats.female})`);
+      const genderRatio = site.stats.female > 0 
+        ? `${(site.stats.male / site.stats.female).toFixed(1)}:1` 
+        : site.stats.male > 0 ?  `all male` : `empty`;
+      console.log(`  Site ${site.siteNumber}: ${site.stats.total} people (M:  ${site.stats.male}, F: ${site.stats.female}, ratio: ${genderRatio}, visitors: ${site.stats.visitors})`);
     });
+  }
+
+  // ✅ NEW FUNCTION: Create stratified buckets for even distribution
+  createStratifiedBuckets() {
+    const buckets = {};
+    
+    // Create a unique bucket for each combination of characteristics
+    this.registrations.forEach(person => {
+      // Create bucket key based on multiple characteristics
+      const gender = person.gender;
+      const experience = person.previousMissionsCount === 0 ? 'firstTimer' : 
+                        person.previousMissionsCount === 1 ? 'experienced' : 'veteran';
+      const isVisitor = person.isVisitor ?  'visitor' : 'student';
+      const campus = person.campus || 'unknown';
+      
+      // Bucket key combines:  gender_experience_visitorStatus_campus
+      // This ensures even distribution of ALL characteristics
+      const bucketKey = `${gender}_${experience}_${isVisitor}_${campus}`;
+      
+      if (!buckets[bucketKey]) {
+        buckets[bucketKey] = [];
+      }
+      
+      buckets[bucketKey].push(person);
+    });
+    
+    return buckets;
   }
 
   groupByCharacteristics(registrations) {
     const groups = {
       maleFirstTimers: registrations.filter((r) => r.gender === 'MALE' && r.previousMissionsCount === 0),
-      maleExperienced: registrations.filter((r) => r.gender === 'MALE' && r.previousMissionsCount === 1),
+      maleExperienced: registrations. filter((r) => r.gender === 'MALE' && r.previousMissionsCount === 1),
       maleVeterans: registrations.filter((r) => r.gender === 'MALE' && r.previousMissionsCount >= 2),
-      femaleFirstTimers: registrations.filter((r) => r.gender === 'FEMALE' && r.previousMissionsCount === 0),
+      femaleFirstTimers: registrations. filter((r) => r.gender === 'FEMALE' && r.previousMissionsCount === 0),
       femaleExperienced: registrations.filter((r) => r.gender === 'FEMALE' && r.previousMissionsCount === 1),
       femaleVeterans: registrations.filter((r) => r.gender === 'FEMALE' && r.previousMissionsCount >= 2),
     };
@@ -186,7 +220,7 @@ class MissionaryDistributor {
     const groupArrays = Object.values(groups);
     const maxLength = Math.max(...groupArrays.map(g => g.length));
     
-    console.log(`🔀 Interleaving ${groupArrays.reduce((sum, g) => sum + g.length, 0)} people...`);
+    console.log(`🔀 Interleaving ${groupArrays.reduce((sum, g) => sum + g.length, 0)} people... `);
     
     // Deal people like cards - one from each group at a time
     for (let i = 0; i < maxLength; i++) {
@@ -204,13 +238,13 @@ class MissionaryDistributor {
   // ========================================
   
   optimizeDistribution() {
-    console.log('🔧 Optimization passes...');
+    console.log('🔧 Optimization passes.. .');
     
     let bestScore = this.calculateTotalScore();
     let bestState = this.saveSiteState();
     let noImprovementCount = 0;
     
-    console.log(`  Initial score: ${bestScore.toFixed(2)}`);
+    console.log(`  Initial score: ${bestScore. toFixed(2)}`);
     
     for (let pass = 0; pass < this.maxOptimizationPasses; pass++) {
       console.log(`  --- Pass ${pass + 1} ---`);
@@ -233,7 +267,7 @@ class MissionaryDistributor {
       
       // Show site distribution after each pass
       this.sites.forEach(site => {
-        console.log(`    Site ${site.siteNumber}: ${site.stats.total} people (M: ${site.stats.male}, F: ${site.stats.female})`);
+        console.log(`    Site ${site.siteNumber}: ${site.stats.total} people (M: ${site.stats.male}, F: ${site.stats. female})`);
       });
       
       // Track best solution found
@@ -241,7 +275,7 @@ class MissionaryDistributor {
         bestScore = currentScore;
         bestState = this.saveSiteState();
         noImprovementCount = 0;
-        console.log(`    ✨ New best score!`);
+        console.log(`    ✨ New best score! `);
       } else {
         noImprovementCount++;
       }
@@ -326,48 +360,67 @@ class MissionaryDistributor {
     const needsMoreFemales = toSite.stats.female < toSite.stats.male;
     
     fromSite.missionaries.forEach(person => {
-      if ((needsMoreMales && person.gender === 'MALE') ||
+      if ((needsMoreMales && person. gender === 'MALE') ||
           (needsMoreFemales && person.gender === 'FEMALE') ||
           Math.abs(toSite.stats.male - toSite.stats.female) <= 1) {
-        candidates.push(person);
+        candidates. push(person);
       }
     });
     
-    return candidates.slice(0, 10);
+    return candidates. slice(0, 10);
   }
 
+  // ✅ UPDATED:  Add strict constraints to prevent terrible distributions
   optimizeByMoving() {
-  let movesMade = 0;
-  
-  this.sites.forEach(site => {
-    const moveCandidates = site.missionaries.filter(person => {
-      const currentFit = this.calculatePersonFitScore(person, site);
-      const bestAlternative = this.findBestSite(person, site);
-      const alternativeFit = this.calculatePersonFitScore(person, bestAlternative);
+    let movesMade = 0;
+    const avgPerSite = this.registrations.length / this.numberOfSites;
+    const MIN_SITE_SIZE = Math.max(10, avgPerSite * 0.75); // Sites can't go below 75% of average
+    const MAX_SITE_SIZE = avgPerSite * 1.25; // Sites can't exceed 125% of average
+    
+    this.sites.forEach(site => {
+      const moveCandidates = site.missionaries.filter(person => {
+        const currentFit = this.calculatePersonFitScore(person, site);
+        const bestAlternative = this.findBestSite(person, site);
+        const alternativeFit = this.calculatePersonFitScore(person, bestAlternative);
+        
+        return alternativeFit < currentFit - 1.0;
+      });
       
-      return alternativeFit < currentFit - 1.0;
+      moveCandidates.forEach(person => {
+        const newSite = this.findBestSite(person, site);
+        
+        if (newSite !== site) {
+          // ✅ CRITICAL CONSTRAINTS:  Prevent tiny/huge sites and single-gender sites
+          const wouldMakeSiteTooSmall = (site.stats.total - 1) < MIN_SITE_SIZE;
+          const wouldMakeSiteTooLarge = (newSite.stats.total + 1) > MAX_SITE_SIZE;
+          
+          // ✅ CRITICAL:  Prevent single-gender sites
+          const genderKey = person.gender === 'MALE' ? 'male' : 'female';
+          const otherGenderKey = person.gender === 'MALE' ? 'female' : 'male';
+          const wouldLeaveNoGender = site.stats[genderKey] <= 2 && site.stats[otherGenderKey] > 5;
+          const wouldCreateSingleGender = newSite.stats. total >= 8 && newSite.stats[otherGenderKey] === 0;
+          
+          // Only allow the move if it doesn't violate constraints
+          if (! wouldMakeSiteTooSmall && 
+              !wouldMakeSiteTooLarge && 
+              !wouldLeaveNoGender && 
+              !wouldCreateSingleGender) {
+            this.movePerson(site, newSite, person);
+            movesMade++;
+          }
+        }
+      });
     });
     
-    moveCandidates.forEach(person => {
-      const newSite = this.findBestSite(person, site);
-      // ✅ FIX:  Removed strict constraint check - always allow moves if score improves
-      // Previously: if (newSite !== site && this.canSwapLenient(site, newSite, person))
-      if (newSite !== site) {
-        this.movePerson(site, newSite, person);
-        movesMade++;
-      }
-    });
-  });
-  
-  console.log(`  ℹ️ Made ${movesMade} moves during optimization`);
-}
+    console.log(`  ℹ️ Made ${movesMade} moves during optimization`);
+  }
 
   simulatedAnnealing(temperature) {
     const iterations = 50;
     
     for (let i = 0; i < iterations; i++) {
       const siteA = this.sites[Math.floor(Math.random() * this.sites.length)];
-      const siteB = this.sites[Math.floor(Math.random() * this.sites.length)];
+      const siteB = this. sites[Math.floor(Math. random() * this.sites.length)];
       
       if (siteA === siteB || siteA.missionaries.length === 0 || siteB.missionaries.length === 0) continue;
       
@@ -397,7 +450,7 @@ class MissionaryDistributor {
       .filter(site => site !== excludeSite)
       .map(site => ({
         site,
-        score: this.calculateSiteScore(site, person)
+        score:  this.calculateSiteScore(site, person)
       }));
 
     scores.sort((a, b) => a.score - b.score);
@@ -406,23 +459,23 @@ class MissionaryDistributor {
 
   calculateSiteScore(site, person) {
     let score = 0;
-    const avgPerSite = this.registrations.length / this.numberOfSites;
+    const avgPerSite = this.registrations.length / this. numberOfSites;
 
-    // 1. TOTAL BALANCE - progressive penalty
+    // 1.  TOTAL BALANCE - progressive penalty (HIGHEST PRIORITY)
     const totalDiff = Math.abs(site.stats.total - avgPerSite);
     const totalPenalty = Math.pow(totalDiff, 1.5) * this.weights.totalBalance;
     score += isFinite(totalPenalty) ? totalPenalty : 0;
 
-    // 2. GENDER BALANCE
-    const genderKey = person.gender === 'MALE' ? 'male' : 'female';
+    // 2. GENDER BALANCE (VERY HIGH PRIORITY)
+    const genderKey = person.gender === 'MALE' ? 'male' :  'female';
     const otherGenderKey = person.gender === 'MALE' ? 'female' : 'male';
     const afterAddingMe = (site.stats[genderKey] + 1) - site.stats[otherGenderKey];
     const genderPenalty = Math.pow(Math.max(0, afterAddingMe), 2) * this.weights.genderBalance;
     score += isFinite(genderPenalty) ? genderPenalty : 0;
 
     // 3. EXPERIENCE BALANCE
-    const expKey = person.previousMissionsCount === 0 ? 'firstTimers' :
-                  person.previousMissionsCount === 1 ? 'experienced' : 'veterans';
+    const expKey = person.previousMissionsCount === 0 ? 'firstTimers' : 
+                  person.previousMissionsCount === 1 ? 'experienced' :  'veterans';
     const expCount = site.stats[expKey];
     const avgExp = this.globalStats.experienceLevels[expKey] / this.numberOfSites;
     const expPenalty = Math.pow(Math.abs(expCount - avgExp), 1.5) * this.weights.experienceBalance;
@@ -440,21 +493,21 @@ class MissionaryDistributor {
     if (person.yearOfStudy) {
       const yearCount = site.stats.yearsOfStudy[person.yearOfStudy] || 0;
       if (yearCount === 0) {
-        score -= this.weights.yearDiversity * 0.5;
+        score -= this.weights. yearDiversity * 0.5;
       } else {
         score += yearCount * this.weights.yearDiversity;
       }
     }
 
-    // 6. VISITOR DISTRIBUTION
+    // 6. VISITOR DISTRIBUTION (HIGH PRIORITY - spread evenly)
     if (person.isVisitor) {
-      const avgVisitors = this.globalStats.totalVisitors / this.numberOfSites;
-      const visitorDiff = Math.abs(site.stats.visitors - avgVisitors);
+      const avgVisitors = this.globalStats. totalVisitors / this.numberOfSites;
+      const visitorDiff = Math.abs(site. stats.visitors - avgVisitors);
       score += visitorDiff * this.weights.visitorSpread;
     }
 
     // Safety check
-    if (!isFinite(score)) {
+    if (! isFinite(score)) {
       console.warn('⚠️ Invalid score calculated, using fallback');
       return 1000;
     }
@@ -476,7 +529,7 @@ class MissionaryDistributor {
 
   calculateSitesPairScore(siteA, siteB) {
     return siteA.missionaries.reduce((sum, p) => sum + this.calculatePersonFitScore(p, siteA), 0) +
-           siteB.missionaries.reduce((sum, p) => sum + this.calculatePersonFitScore(p, siteB), 0);
+           siteB.missionaries. reduce((sum, p) => sum + this.calculatePersonFitScore(p, siteB), 0);
   }
 
   // ========================================
@@ -493,11 +546,11 @@ class MissionaryDistributor {
       const genderImbalances = this.sites.map(site => ({
         site,
         imbalance: Math.abs(site.stats.male - site.stats.female),
-        needsGender: site.stats.male > site.stats.female ? 'FEMALE' : 'MALE'
+        needsGender: site.stats.male > site.stats.female ?  'FEMALE' : 'MALE'
       })).sort((a, b) => b.imbalance - a.imbalance);
 
       for (const imbalanced of genderImbalances) {
-        if (imbalanced.imbalance <= 1) break;
+        if (imbalanced. imbalance <= 1) break;
 
         const donor = this.sites.find(s => {
           if (s === imbalanced.site) return false;
@@ -526,37 +579,36 @@ class MissionaryDistributor {
   }
 
   balanceTotalsAcrossAllSites() {
-  const avgPerSite = this.registrations.length / this. numberOfSites;
-  
-  console.log(`  🔧 Balancing totals (target: ${avgPerSite.toFixed(1)} per site)`);
-  
-  for (let i = 0; i < 5; i++) {
-    const overstaffed = this.sites.filter(s => s.stats.total > avgPerSite + 0.5);
-    const understaffed = this.sites.filter(s => s.stats.total < avgPerSite - 0.5);
+    const avgPerSite = this.registrations.length / this.numberOfSites;
     
-    if (overstaffed.length === 0 || understaffed.length === 0) break;
+    console.log(`  🔧 Balancing totals (target: ${avgPerSite.toFixed(1)} per site)`);
     
-    overstaffed.forEach(fromSite => {
-      const toSite = understaffed[0];
+    for (let i = 0; i < 5; i++) {
+      const overstaffed = this.sites.filter(s => s.stats.total > avgPerSite + 0.5);
+      const understaffed = this.sites.filter(s => s.stats.total < avgPerSite - 0.5);
       
-      // ✅ FIX: Only move if toSite still needs people
-      if (toSite.stats.total >= avgPerSite) return;
+      if (overstaffed.length === 0 || understaffed.length === 0) break;
       
-      const person = this.findBestPersonToMove(fromSite, toSite);
-      
-      if (person) {
-        console.log(`    Moving ${person.firstName} from Site ${fromSite. siteNumber} (${fromSite.stats.total}) to Site ${toSite.siteNumber} (${toSite.stats.total})`);
-        this.movePerson(fromSite, toSite, person);
-      }
-    });
+      overstaffed.forEach(fromSite => {
+        const toSite = understaffed[0];
+        
+        if (toSite.stats.total >= avgPerSite) return;
+        
+        const person = this.findBestPersonToMove(fromSite, toSite);
+        
+        if (person) {
+          console.log(`    Moving ${person.firstName} from Site ${fromSite.siteNumber} (${fromSite.stats.total}) to Site ${toSite.siteNumber} (${toSite.stats.total})`);
+          this.movePerson(fromSite, toSite, person);
+        }
+      });
+    }
+    
+    // Verify no one was lost
+    const totalAfter = this.sites.reduce((sum, s) => sum + s.stats.total, 0);
+    if (totalAfter !== this.registrations.length) {
+      console.error(`❌ BALANCE ERROR: Started with ${this.registrations.length}, now have ${totalAfter}`);
+    }
   }
-  
-  // ✅ Verify no one was lost
-  const totalAfter = this.sites.reduce((sum, s) => sum + s.stats.total, 0);
-  if (totalAfter !== this.registrations.length) {
-    console.error(`❌ BALANCE ERROR: Started with ${this.registrations.length}, now have ${totalAfter}`);
-  }
-}
 
   balanceCampuses() {
     const allCampuses = {};
@@ -576,11 +628,11 @@ class MissionaryDistributor {
   balanceSingleCampus(campus) {
     const campusCount = this.sites.map((site) => ({
       site,
-      count: site.stats.campuses[campus] || 0,
+      count:  site.stats.campuses[campus] || 0,
     }));
 
     const max = Math.max(...campusCount.map((c) => c.count));
-    const min = Math.min(...campusCount.map((c) => c.count));
+    const min = Math.min(... campusCount.map((c) => c.count));
 
     if (max - min <= 2) return;
 
@@ -618,7 +670,7 @@ class MissionaryDistributor {
   balanceSingleYear(year) {
     const yearCounts = this.sites.map((site) => ({
       site,
-      count: site.stats.yearsOfStudy[year] || 0,
+      count: site.stats. yearsOfStudy[year] || 0,
     }));
 
     const max = Math.max(...yearCounts.map((c) => c.count));
@@ -631,7 +683,7 @@ class MissionaryDistributor {
 
     if (maxSite && minSite) {
       const personToMove = maxSite.missionaries.find(
-        (m) => m.yearOfStudy === year && this.canSwapLenient(maxSite, minSite, m)
+        (m) => m.yearOfStudy === year && this. canSwapLenient(maxSite, minSite, m)
       );
 
       if (personToMove) {
@@ -656,9 +708,9 @@ class MissionaryDistributor {
 
   canSwap(fromSite, toSite, person) {
     const genderKey = person.gender === 'MALE' ? 'male' : 'female';
-    const genderDiff = Math.abs((fromSite.stats[genderKey] - 1) - (toSite.stats[genderKey] + 1));
+    const genderDiff = Math. abs((fromSite.stats[genderKey] - 1) - (toSite.stats[genderKey] + 1));
     
-    const experienceKey = person.previousMissionsCount === 0 ? 'firstTimers' : 
+    const experienceKey = person.previousMissionsCount === 0 ? 'firstTimers' :  
                           person.previousMissionsCount === 1 ? 'experienced' : 'veterans';
     const experienceDiff = Math.abs(
       (fromSite.stats[experienceKey] - 1) - (toSite.stats[experienceKey] + 1)
@@ -668,15 +720,15 @@ class MissionaryDistributor {
   }
 
   findBestPersonToMove(fromSite, toSite) {
-    const needsGender = toSite.stats.male < toSite.stats.female ? 'MALE' : 'FEMALE';
+    const needsGender = toSite.stats.male < toSite.stats.female ?  'MALE' : 'FEMALE';
     
-    const candidates = fromSite.missionaries.filter(m => 
+    const candidates = fromSite.missionaries. filter(m => 
       m.gender === needsGender && this.canSwapLenient(fromSite, toSite, m)
     );
     
     if (candidates.length === 0) {
       // If no candidates match needed gender, try anyone
-      return fromSite.missionaries.find(m => this.canSwapLenient(fromSite, toSite, m));
+      return fromSite.missionaries. find(m => this.canSwapLenient(fromSite, toSite, m));
     }
     
     return candidates[Math.floor(Math.random() * candidates.length)];
@@ -707,10 +759,10 @@ class MissionaryDistributor {
   updateSiteStats(site, person, delta) {
     site.stats.total += delta;
     site.stats[person.gender === 'MALE' ? 'male' : 'female'] += delta;
-    site.stats.campuses[person.campus] = (site.stats.campuses[person.campus] || 0) + delta;
+    site.stats. campuses[person.campus] = (site.stats.campuses[person.campus] || 0) + delta;
     
     if (person.yearOfStudy) {
-      site.stats.yearsOfStudy[person.yearOfStudy] = (site.stats.yearsOfStudy[person.yearOfStudy] || 0) + delta;
+      site.stats.yearsOfStudy[person.yearOfStudy] = (site. stats.yearsOfStudy[person.yearOfStudy] || 0) + delta;
     }
     
     if (person.isVisitor) {
@@ -722,7 +774,7 @@ class MissionaryDistributor {
     } else if (person.previousMissionsCount === 1) {
       site.stats.experienced += delta;
     } else {
-      site.stats.veterans += delta;
+      site. stats.veterans += delta;
     }
   }
 
@@ -730,10 +782,10 @@ class MissionaryDistributor {
     return {
       totalPeople: this.registrations.length,
       totalMales: this.registrations.filter(r => r.gender === 'MALE').length,
-      totalFemales: this.registrations.filter(r => r.gender === 'FEMALE').length,
-      totalVisitors: this.registrations.filter(r => r.isVisitor).length,
+      totalFemales: this.registrations.filter(r => r. gender === 'FEMALE').length,
+      totalVisitors: this.registrations.filter(r => r. isVisitor).length,
       experienceLevels: {
-        firstTimers: this.registrations.filter(r => r.previousMissionsCount === 0).length,
+        firstTimers: this. registrations.filter(r => r. previousMissionsCount === 0).length,
         experienced: this.registrations.filter(r => r.previousMissionsCount === 1).length,
         veterans: this.registrations.filter(r => r.previousMissionsCount >= 2).length,
       }
@@ -752,18 +804,20 @@ class MissionaryDistributor {
   saveSiteState() {
     return this.sites.map(site => ({
       siteNumber: site.siteNumber,
-      missionaries: [...site.missionaries],
+      missionaries: [... site.missionaries],
       stats: JSON.parse(JSON.stringify(site.stats))
     }));
   }
 
   restoreSiteState(savedState) {
     savedState.forEach((savedSite, index) => {
-      this.sites[index].missionaries = [...savedSite.missionaries];
+      this.sites[index].missionaries = [... savedSite.missionaries];
       this.sites[index].stats = JSON.parse(JSON.stringify(savedSite.stats));
     });
   }
 }
+
+
 // ============================================================================
 // MISSION CONTROLLER CLASS
 // ============================================================================
