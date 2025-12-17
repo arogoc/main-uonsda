@@ -3,6 +3,7 @@ import { z } from 'zod';
 import ExcelJS from 'exceljs';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
+import path from 'path';
 
 import { normalizeCampus, validateCampusNames, getCampusDisplayName } from '../utils/campusNormalizer.js';
 import { normalizeYearOfStudy, validateYearOfStudy, getYearOfStudyDisplay } from '../utils/yearOfStudyNormalizer.js';
@@ -13,7 +14,22 @@ import {
   getMissionExperienceDisplay 
 } from '../utils/missionExperienceNormalizer.js';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL + '?connection_limit=20&pool_timeout=20',
+    },
+  },
+})
+
+
+// ============================================================================
+// STEP 2: ADD HELPER FUNCTION FOR DELAYS
+// ============================================================================
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // ============================================================================
 // VALIDATION SCHEMAS
@@ -841,48 +857,116 @@ class MissionController {
    * @route POST /api/missions/:id/upload
    */
   async uploadRegistrations(req, res) {
-    try {
-      const { id } = req.params;
+  try {
+    const { id } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+      });
+    }
+
+    console.log(`📤 File upload: ${req.file.originalname} (${req.file.mimetype})`);
+
+    const mission = await prisma.mission.findUnique({ where: { id } });
+    if (!mission) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mission not found',
+      });
+    }
+
+    let registrations = [];
+    
+    // Get file extension to determine type
+    const fileExtension = path.extname(req.file.originalname).toLowerCase();
+    console.log(`📋 File extension: ${fileExtension}`);
+
+    // Parse file based on extension
+    if (fileExtension === '.csv') {
+      console.log('📊 Parsing as CSV...');
+      registrations = await this.parseCSV(req.file.buffer);
+    } else if (fileExtension === '.xlsx' || fileExtension === '.xls') {
+      console.log('📊 Parsing as Excel...');
+      registrations = await this.parseExcel(req.file.buffer);
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported file type: ${fileExtension}. Please upload a .csv, .xls, or .xlsx file.`,
+      });
+    }
+
+    console.log(`✅ Parsed ${registrations.length} rows`);
+
+    if (!registrations || registrations.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid data found in the uploaded file. Please check the file format.',
+      });
+    }
+
+    console.log('🔄 Normalizing registrations in batches...');
+
+    // ✅ FIX: Normalize in batches to avoid connection pool exhaustion
+    const NORMALIZE_BATCH_SIZE = 10;
+    const normalized = [];
+    const errors = [];
+    
+    for (let i = 0; i < registrations.length; i += NORMALIZE_BATCH_SIZE) {
+      const batch = registrations.slice(i, i + NORMALIZE_BATCH_SIZE);
+      console.log(`  Normalizing batch ${Math.floor(i / NORMALIZE_BATCH_SIZE) + 1}/${Math.ceil(registrations.length / NORMALIZE_BATCH_SIZE)}`);
       
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: 'No file uploaded',
-        });
+      for (const reg of batch) {
+        try {
+          const normalizedReg = await this.normalizeRegistration(reg, id);
+          normalized.push(normalizedReg);
+        } catch (error) {
+          errors.push({ row: registrations.indexOf(reg) + 2, error: error.message });
+        }
       }
-
-      const mission = await prisma.mission.findUnique({ where: { id } });
-      if (!mission) {
-        return res.status(404).json({
-          success: false,
-          message: 'Mission not found',
-        });
+      
+      // Small delay between batches to let connections close
+      if (i + NORMALIZE_BATCH_SIZE < registrations.length) {
+        await delay(100); // 100ms delay
       }
+    }
 
-      let registrations = [];
+    // If more than 50% failed, something is wrong
+    if (errors.length > registrations.length / 2) {
+      return res.status(400).json({
+        success: false,
+        message: `Failed to parse most rows. Please check your file format.`,
+        errors: errors.slice(0, 5),
+      });
+    }
 
-      // Parse file
-      if (req.file.mimetype === 'text/csv') {
-        registrations = await this.parseCSV(req.file.buffer);
-      } else {
-        registrations = await this.parseExcel(req.file.buffer);
-      }
+    console.log(`✅ Normalized ${normalized.length} registrations`);
+    if (errors.length > 0) {
+      console.log(`⚠️ ${errors.length} rows had errors`);
+    }
 
-      // Normalize all registrations
-      const normalized = await Promise.all(
-        registrations. map((reg) => this.normalizeRegistration(reg, id))
-      );
+    // Validate
+    const campusNames = registrations.map((r) => r.campus).filter(Boolean);
+    const campusValidation = validateCampusNames(campusNames);
 
-      // Validate
-      const campusNames = registrations.map((r) => r.campus). filter(Boolean);
-      const campusValidation = validateCampusNames(campusNames);
+    const yearsOfStudy = registrations
+      .map((r) => r.yearOfStudy || r['What´s your year of study?'] || r["What's your year of study?"])
+      .filter(Boolean);
+    const yearValidation = validateYearOfStudy(yearsOfStudy);
 
-      const yearsOfStudy = registrations.map((r) => r.yearOfStudy). filter(Boolean);
-      const yearValidation = validateYearOfStudy(yearsOfStudy);
+    console.log('💾 Saving to database in batches...');
 
-      // Insert into database
-      const created = await Promise.all(
-        normalized.map((reg) =>
+    // ✅ Process database inserts in batches
+    const DB_BATCH_SIZE = 10;
+    const created = [];
+    
+    for (let i = 0; i < normalized.length; i += DB_BATCH_SIZE) {
+      const batch = normalized.slice(i, i + DB_BATCH_SIZE);
+      console.log(`  Saving batch ${Math.floor(i / DB_BATCH_SIZE) + 1}/${Math.ceil(normalized.length / DB_BATCH_SIZE)} (${batch.length} records)`);
+      
+      const batchResults = await Promise.all(
+        batch.map((reg) =>
           prisma.missionRegistration.upsert({
             where: {
               missionId_email: {
@@ -892,42 +976,55 @@ class MissionController {
             },
             update: reg,
             create: {
-              ... reg,
+              ...reg,
               missionId: id,
             },
           })
         )
       );
-
-      res.json({
-        success: true,
-        message: `${created.length} registrations uploaded successfully`,
-        data: {
-          count: created.length,
-          warnings: {
-            campus: campusValidation. warnings,
-            yearOfStudy: yearValidation. warnings,
-          },
-          stats: {
-            male: normalized.filter((r) => r. gender === 'MALE').length,
-            female: normalized.filter((r) => r.gender === 'FEMALE').length,
-            firstTimers: normalized.filter((r) => r.isFirstTime).length,
-            visitors: normalized.filter((r) => r.isVisitor).length,
-            byCampus: normalized.reduce((acc, r) => {
-              acc[r.campus] = (acc[r.campus] || 0) + 1;
-              return acc;
-            }, {}),
-          },
-        },
-      });
-    } catch (error) {
-      console.error('Upload registrations error:', error);
-      res. status(500).json({
-        success: false,
-        message: error.message,
-      });
+      
+      created.push(...batchResults);
+      
+      // Small delay between batches
+      if (i + DB_BATCH_SIZE < normalized.length) {
+        await delay(100);
+      }
     }
+
+    console.log(`✅ Saved ${created.length} registrations`);
+
+    res.json({
+      success: true,
+      message: errors.length === 0 
+        ? `${created.length} registrations uploaded successfully`
+        : `${created.length} registrations uploaded successfully (${errors.length} rows skipped due to errors)`,
+      data: {
+        count: created.length,
+        errors: errors.length > 0 ? errors : undefined,
+        warnings: {
+          campus: campusValidation.warnings,
+          yearOfStudy: yearValidation.warnings,
+        },
+        stats: {
+          male: normalized.filter((r) => r.gender === 'MALE').length,
+          female: normalized.filter((r) => r.gender === 'FEMALE').length,
+          firstTimers: normalized.filter((r) => r.isFirstTime).length,
+          visitors: normalized.filter((r) => r.isVisitor).length,
+          byCampus: normalized.reduce((acc, r) => {
+            acc[r.campus] = (acc[r.campus] || 0) + 1;
+            return acc;
+          }, {}),
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Upload registrations error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to upload registrations',
+    });
   }
+}
 
   /**
    * Distribute missionaries across sites
@@ -1646,82 +1743,333 @@ class MissionController {
   }
 
  async normalizeRegistration(row, missionId) {
-  // Find email in various possible column names
-  const email = (
-    row.email || row.Email || row['Email Address'] || row['email address']
-  )?. trim(). toLowerCase();
+  // ✅ EMAIL IS NOW OPTIONAL
+  let email = (
+    row.email || 
+    row.Email || 
+    row['Email Address'] || 
+    row['email address'] ||
+    row.contact
+  )?.toString().trim().toLowerCase();
 
-  if (!email) {
-    throw new Error('Email is required for each registration');
+  // If email contains '@', it's valid. Otherwise, generate a placeholder
+  if (!email || !email.includes('@')) {
+    // Generate unique email placeholder using phone or name
+    const phoneRaw = 
+      row.phone || 
+      row.Phone || 
+      row['Phone Number'] || 
+      row['phone number'] ||
+      row.Contact ||
+      row.contact;
+    
+    const phone = phoneRaw?.toString().trim();
+    
+    if (phone && !phone.includes('@')) {
+      // Use phone number as identifier
+      email = `${phone.replace(/\s+/g, '')}@placeholder.mission`;
+    } else {
+      // Use name + random string as identifier
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(7);
+      email = `missionary_${timestamp}_${random}@placeholder.mission`;
+    }
+    
+    console.log(`⚠️ No email provided, generated placeholder: ${email}`);
   }
 
-  // ✅ NEW: PARSE NAME FROM VARIOUS FORMATS
+  // ✅ PARSE NAME FROM VARIOUS FORMATS
   let firstName, lastName;
 
   // Try to find separate first/last names
-  const firstNameRaw = row.firstName || row['First Name'] || row. firstname || row['first name'];
+  const firstNameRaw = row.firstName || row['First Name'] || row.firstname || row['first name'];
   const lastNameRaw = row.lastName || row['Last Name'] || row.lastname || row['last name'];
 
   if (firstNameRaw && lastNameRaw) {
-    // ✅ Separate columns exist
-    firstName = firstNameRaw.trim();
-    lastName = lastNameRaw.trim();
+    firstName = firstNameRaw.toString().trim();
+    lastName = lastNameRaw.toString().trim();
   } else {
-    // ✅ Look for combined name column
+    // Look for combined name column
     const fullNameRaw = 
       row.name || 
-      row. Name || 
+      row.Name || 
       row['Full Name'] || 
       row['full name'] || 
-      row. fullname || 
-      row. FullName ||
+      row.fullname || 
+      row.FullName ||
       row['Student Name'] ||
       row['student name'];
 
     if (fullNameRaw) {
-      const nameParts = this.parseFullName(fullNameRaw. trim());
+      const nameParts = this.parseFullName(fullNameRaw.toString().trim());
       firstName = nameParts.firstName;
       lastName = nameParts.lastName;
     }
   }
 
   if (!firstName || !lastName) {
-    throw new Error(`Name is required for ${email}.  Please provide either 'First Name' & 'Last Name' columns, or a 'Name'/'Full Name' column.`);
+    throw new Error(`Name is required. Please provide either 'First Name' & 'Last Name' columns, or a 'Name'/'Full Name' column.`);
   }
 
   // Normalize campus
-  const campusRaw = row.campus || row. Campus || row['Campus Name'] || row['campus name'];
+  const campusRaw = row.campus || row.Campus || row['Campus Name'] || row['campus name'];
   const campus = normalizeCampus(campusRaw);
   const isVisitor = campus === 'VISITOR';
 
-  // Normalize year of study
-  const yearRaw = row.year || row. Year || row['Year of Study'] || row['year of study'] || row.yearOfStudy;
+  // ✅ Handle various year of study column names
+  const yearRaw = 
+    row.year || 
+    row.Year || 
+    row['Year of Study'] || 
+    row['year of study'] || 
+    row.yearOfStudy ||
+    row['What´s your year of study?'] || 
+    row["What's your year of study?"] ||
+    row['Whats your year of study?'] ||
+    row['year'];
+  
   const yearOfStudy = normalizeYearOfStudy(yearRaw);
 
   // Auto-detect mission experience
   const autoDetected = await detectMissionExperience(email, missionId, prisma);
   
   // Merge with user input
-  const userInput = row.previousMissions || row['Previous Missions'] || row['Number of missions attended before'] || row. missionsAttended;
+  const userInput = 
+    row.previousMissions || 
+    row['Previous Missions'] || 
+    row['Number of missions attended before'] || 
+    row.missionsAttended ||
+    row['previous missions'] ||
+    row['missions attended'];
+  
   const experience = mergeMissionExperience(userInput, autoDetected);
 
+  // ✅ Handle contact/phone variations
+  const phoneRaw = 
+    row.phone || 
+    row.Phone || 
+    row['Phone Number'] || 
+    row['phone number'] ||
+    row.Contact ||
+    row.contact;
+  
+  // Only use as phone if it's numeric and not an email
+  let phone = null;
+  if (phoneRaw && !phoneRaw.toString().includes('@')) {
+    phone = phoneRaw.toString().trim();
+  }
+
   // Get gender
-  const genderRaw = (row.gender || row.Gender)?.toString(). toUpperCase();
-  const gender = genderRaw === 'FEMALE' || genderRaw === 'F' ?  'FEMALE' : 'MALE';
+  const genderRaw = (row.gender || row.Gender)?.toString().toUpperCase().trim();
+  const gender = genderRaw === 'FEMALE' || genderRaw === 'F' ? 'FEMALE' : 'MALE';
 
   return {
     firstName,
     lastName,
-    email,
-    phone: (row.phone || row.Phone || row['Phone Number'])?.trim() || null,
+    email, // Now can be placeholder
+    phone,
     gender,
     campus,
     yearOfStudy,
     isVisitor,
-    homeChurch: isVisitor ? (row.homeChurch || row['Home Church'])?.trim() : null,
+    homeChurch: isVisitor ? (row.homeChurch || row['Home Church'])?.toString().trim() : null,
     previousMissionsCount: experience.count,
     isFirstTime: experience.isFirstTime,
   };
+}
+
+// ============================================================================
+// HELPER METHOD - Keep this as is
+// ============================================================================
+
+parseFullName(fullName) {
+  if (!fullName || fullName.trim().length === 0) {
+    throw new Error('Name cannot be empty');
+  }
+
+  const cleaned = fullName.trim().replace(/\s+/g, ' ');
+  const parts = cleaned.split(' ');
+
+  if (parts.length === 1) {
+    return {
+      firstName: parts[0],
+      lastName: parts[0]
+    };
+  } else if (parts.length === 2) {
+    return {
+      firstName: parts[0],
+      lastName: parts[1]
+    };
+  } else if (parts.length === 3) {
+    const middlePart = parts[1];
+    if (middlePart.length <= 2 && (middlePart.endsWith('.') || middlePart.length === 1)) {
+      return {
+        firstName: parts[0],
+        lastName: parts[2]
+      };
+    } else {
+      return {
+        firstName: `${parts[0]} ${parts[1]}`,
+        lastName: parts[2]
+      };
+    }
+  } else {
+    const lastName = parts[parts.length - 1];
+    const firstName = parts.slice(0, -1).join(' ');
+    
+    return {
+      firstName,
+      lastName
+    };
+  }
+}
+
+// ============================================================================
+// UPDATED uploadRegistrations METHOD
+// ============================================================================
+
+async uploadRegistrations(req, res) {
+  try {
+    const { id } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+      });
+    }
+
+    console.log(`📤 File upload: ${req.file.originalname} (${req.file.mimetype})`);
+
+    const mission = await prisma.mission.findUnique({ where: { id } });
+    if (!mission) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mission not found',
+      });
+    }
+
+    let registrations = [];
+    
+    // Get file extension to determine type
+    const fileExtension = path.extname(req.file.originalname).toLowerCase();
+    console.log(`📋 File extension: ${fileExtension}`);
+
+    // Parse file based on extension
+    if (fileExtension === '.csv') {
+      console.log('📊 Parsing as CSV...');
+      registrations = await this.parseCSV(req.file.buffer);
+    } else if (fileExtension === '.xlsx' || fileExtension === '.xls') {
+      console.log('📊 Parsing as Excel...');
+      registrations = await this.parseExcel(req.file.buffer);
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported file type: ${fileExtension}. Please upload a .csv, .xls, or .xlsx file.`,
+      });
+    }
+
+    console.log(`✅ Parsed ${registrations.length} rows`);
+
+    if (!registrations || registrations.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid data found in the uploaded file. Please check the file format.',
+      });
+    }
+
+    console.log('🔄 Normalizing registrations...');
+
+    // Normalize with better error handling
+    const normalized = [];
+    const errors = [];
+    
+    for (let i = 0; i < registrations.length; i++) {
+      try {
+        const reg = await this.normalizeRegistration(registrations[i], id);
+        normalized.push(reg);
+      } catch (error) {
+        errors.push({ row: i + 2, error: error.message });
+      }
+    }
+
+    // If more than 50% failed, something is wrong
+    if (errors.length > registrations.length / 2) {
+      return res.status(400).json({
+        success: false,
+        message: `Failed to parse most rows. Please check your file format.`,
+        errors: errors.slice(0, 5),
+      });
+    }
+
+    console.log(`✅ Normalized ${normalized.length} registrations`);
+    if (errors.length > 0) {
+      console.log(`⚠️ ${errors.length} rows had errors`);
+    }
+
+    // Validate
+    const campusNames = registrations.map((r) => r.campus).filter(Boolean);
+    const campusValidation = validateCampusNames(campusNames);
+
+    const yearsOfStudy = registrations
+      .map((r) => r.yearOfStudy || r['What´s your year of study?'] || r["What's your year of study?"])
+      .filter(Boolean);
+    const yearValidation = validateYearOfStudy(yearsOfStudy);
+
+    console.log('💾 Saving to database...');
+
+    // Insert into database
+    const created = await Promise.all(
+      normalized.map((reg) =>
+        prisma.missionRegistration.upsert({
+          where: {
+            missionId_email: {
+              missionId: id,
+              email: reg.email,
+            },
+          },
+          update: reg,
+          create: {
+            ...reg,
+            missionId: id,
+          },
+        })
+      )
+    );
+
+    console.log(`✅ Saved ${created.length} registrations`);
+
+    res.json({
+      success: true,
+      message: errors.length === 0 
+        ? `${created.length} registrations uploaded successfully`
+        : `${created.length} registrations uploaded successfully (${errors.length} rows skipped due to errors)`,
+      data: {
+        count: created.length,
+        errors: errors.length > 0 ? errors : undefined,
+        warnings: {
+          campus: campusValidation.warnings,
+          yearOfStudy: yearValidation.warnings,
+        },
+        stats: {
+          male: normalized.filter((r) => r.gender === 'MALE').length,
+          female: normalized.filter((r) => r.gender === 'FEMALE').length,
+          firstTimers: normalized.filter((r) => r.isFirstTime).length,
+          visitors: normalized.filter((r) => r.isVisitor).length,
+          byCampus: normalized.reduce((acc, r) => {
+            acc[r.campus] = (acc[r.campus] || 0) + 1;
+            return acc;
+          }, {}),
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Upload registrations error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to upload registrations',
+    });
+  }
 }
 
 // ✅ NEW: HELPER METHOD TO PARSE FULL NAME
